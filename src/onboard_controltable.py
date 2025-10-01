@@ -849,8 +849,37 @@ class OnboardControlTable:
     # Placeholder methods for additional functionality
     def get_bronze_source_details_reader_options_schema(self, onboarding_row, env):
         """Get bronze source details, reader options, and schema."""
-        # Implementation would go here
-        return {}, {}, None
+        # Extract source details from onboarding row
+        source_details = {}
+        reader_config_options = {}
+        schema = None
+        
+        # Get source details from the onboarding row
+        if "source_details" in onboarding_row and onboarding_row["source_details"]:
+            source_details = onboarding_row["source_details"]
+        else:
+            # Provide default source details to avoid empty struct
+            source_details = {
+                "source_database": onboarding_row.get(f"source_database_{env}", "SOURCE_DB"),
+                "source_table": onboarding_row.get("source_table", "source_table"),
+                "source_schema_path": onboarding_row.get("source_schema_path", None)
+            }
+        
+        # Get reader config options
+        if "reader_config_options" in onboarding_row and onboarding_row["reader_config_options"]:
+            reader_config_options = onboarding_row["reader_config_options"]
+        else:
+            # Provide default reader config to avoid empty struct
+            reader_config_options = {
+                "format": "snowflake",
+                "mode": "append"
+            }
+        
+        # Get schema if provided
+        if "schema" in onboarding_row and onboarding_row["schema"]:
+            schema = onboarding_row["schema"]
+        
+        return source_details, reader_config_options, schema
 
     def get_sink_details(self, onboarding_row, layer):
         """Get sink details."""
@@ -859,28 +888,84 @@ class OnboardControlTable:
 
     def get_append_flows_json(self, onboarding_row, layer, env):
         """Get append flows JSON."""
-        # Implementation would go here
-        return None, {}
+        append_flows_key = f"{layer}_append_flows"
+        append_flows_schemas_key = f"{layer}_append_flows_schemas"
+        
+        append_flows = None
+        append_flows_schemas = {}
+        
+        if append_flows_key in onboarding_row and onboarding_row[append_flows_key]:
+            append_flows = onboarding_row[append_flows_key]
+        
+        if append_flows_schemas_key in onboarding_row and onboarding_row[append_flows_schemas_key]:
+            append_flows_schemas = onboarding_row[append_flows_schemas_key]
+        else:
+            # Provide default schema to avoid empty struct
+            append_flows_schemas = {
+                "default_schema": "public"
+            }
+        
+        return append_flows, append_flows_schemas
 
     def __get_cluster_by_properties(self, onboarding_row, table_properties, cluster_key):
         """Get cluster by properties."""
-        # Implementation would go here
+        if cluster_key in onboarding_row and onboarding_row[cluster_key]:
+            cluster_by = onboarding_row[cluster_key]
+            if isinstance(cluster_by, str):
+                return [cluster_by]
+            elif isinstance(cluster_by, list):
+                return cluster_by
         return None
 
     def __get_quarantine_details(self, env, layer, onboarding_row):
         """Get quarantine details."""
-        # Implementation would go here
-        return {}, {}
+        quarantine_target_details = {}
+        quarantine_table_properties = {}
+        
+        # Get quarantine target details
+        quarantine_target_key = f"{layer}_quarantine_target_details"
+        if quarantine_target_key in onboarding_row and onboarding_row[quarantine_target_key]:
+            quarantine_target_details = onboarding_row[quarantine_target_key]
+        else:
+            # Provide default quarantine details to avoid empty struct
+            quarantine_target_details = {
+                "database": onboarding_row.get(f"{layer}_database_{env}", f"{layer.upper()}_DB"),
+                "table": f"quarantine_{onboarding_row.get(f'{layer}_table', 'table')}"
+            }
+        
+        # Get quarantine table properties
+        quarantine_properties_key = f"{layer}_quarantine_table_properties"
+        if quarantine_properties_key in onboarding_row and onboarding_row[quarantine_properties_key]:
+            quarantine_table_properties = onboarding_row[quarantine_properties_key]
+        else:
+            # Provide default quarantine properties to avoid empty struct
+            quarantine_table_properties = {
+                "comment": f"Quarantine table for {layer} layer"
+            }
+        
+        return quarantine_target_details, quarantine_table_properties
 
     def __validate_apply_changes(self, onboarding_row, layer):
         """Validate apply changes."""
-        # Implementation would go here
-        pass
+        apply_changes_key = f"{layer}_cdc_apply_changes"
+        if apply_changes_key in onboarding_row and onboarding_row[apply_changes_key]:
+            apply_changes = onboarding_row[apply_changes_key]
+            # Validate required fields
+            required_fields = ["keys", "sequence_by", "scd_type"]
+            for field in required_fields:
+                if field not in apply_changes:
+                    raise ValueError(f"Missing required field '{field}' in {apply_changes_key}")
 
     def __validate_apply_changes_from_snapshot(self, onboarding_row, layer):
         """Validate apply changes from snapshot."""
-        # Implementation would go here
-        pass
+        apply_changes_key = f"{layer}_apply_changes_from_snapshot"
+        if apply_changes_key in onboarding_row and onboarding_row[apply_changes_key]:
+            apply_changes = onboarding_row[apply_changes_key]
+            # Validate required fields
+            required_fields = ["keys", "scd_type"]
+            for field in required_fields:
+                if field not in apply_changes:
+                    raise ValueError(f"Missing required field '{field}' in {apply_changes_key}")
 
     def __get_data_quality_expecations(self, json_file_path):
         """Get data quality expectations."""
