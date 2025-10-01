@@ -497,7 +497,7 @@ class OnboardControlTable:
                 else:
                     raise Exception(f"bronze_table_path_{env} not provided in onboarding_row={onboarding_row}")
             
-            bronze_table_properties = {}
+            bronze_table_properties = {"comment": "Bronze layer table"}
             if (
                 "bronze_table_properties" in onboarding_row
                 and onboarding_row["bronze_table_properties"]
@@ -544,8 +544,14 @@ class OnboardControlTable:
                 )
             
             data_quality_expectations = None
-            quarantine_target_details = {}
-            quarantine_table_properties = {}
+            # Initialize with default values to avoid empty struct
+            quarantine_target_details = {
+                "database": onboarding_row.get(f"bronze_database_{env}", "BRONZE_DB"),
+                "table": f"quarantine_{onboarding_row.get('bronze_table', 'table')}"
+            }
+            quarantine_table_properties = {
+                "comment": "Bronze quarantine table"
+            }
             if f"bronze_data_quality_expectations_json_{env}" in onboarding_row:
                 bronze_data_quality_expectations_json = onboarding_row[
                     f"bronze_data_quality_expectations_json_{env}"
@@ -554,7 +560,8 @@ class OnboardControlTable:
                     data_quality_expectations = self.__get_data_quality_expecations(
                         bronze_data_quality_expectations_json
                     )
-                    if onboarding_row["bronze_quarantine_table"]:
+                    if onboarding_row.get("bronze_quarantine_table"):
+                        # Override defaults if quarantine table is specified
                         quarantine_target_details, quarantine_table_properties = self.__get_quarantine_details(
                             env, "bronze", onboarding_row
                         )
@@ -639,7 +646,7 @@ class OnboardControlTable:
             
             silver_data_flow_spec_id = onboarding_row["data_flow_id"]
             silver_data_flow_spec_group = onboarding_row["data_flow_group"]
-            silver_reader_config_options = {}
+            silver_reader_config_options = {"format": "snowflake", "mode": "append"}
 
             silver_target_format = "snowflake"
 
@@ -670,7 +677,7 @@ class OnboardControlTable:
                     silver_reader_options_json
                 )
             
-            silver_table_properties = {}
+            silver_table_properties = {"comment": "Silver layer table"}
             if (
                 "silver_table_properties" in onboarding_row
                 and onboarding_row["silver_table_properties"]
