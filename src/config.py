@@ -1,18 +1,39 @@
-"""Configuration utilities for Snowflake-META."""
+"""Configuration utilities for Snowflake-META using Snowpark."""
 
 import os
 import json
 import logging
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from snowflake.snowpark import Session
 
 logger = logging.getLogger("snowflake.labs.snowmeta")
 logger.setLevel(logging.INFO)
 
 
 @dataclass
+class SnowparkConfig:
+    """Configuration class for Snowpark session and settings."""
+    
+    session: Session
+    database: str
+    schema: str
+    warehouse: str
+    role: Optional[str] = None
+    bronze_schema: str = "BRONZE"
+    silver_schema: str = "SILVER"
+    gold_schema: str = "GOLD"
+    bronze_control_table: str = "bronze_control_table"
+    silver_control_table: str = "silver_control_table"
+    log_level: str = "INFO"
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+@dataclass
 class SnowflakeConfig:
-    """Configuration class for Snowflake connection and settings."""
+    """Legacy configuration class for Snowflake connection and settings.
+    
+    DEPRECATED: Use SnowparkConfig instead for new implementations.
+    """
     
     account: str
     user: str
@@ -28,8 +49,110 @@ class SnowflakeConfig:
     session_parameters: Optional[Dict[str, Any]] = None
 
 
+class SnowparkConfigManager:
+    """Modern configuration manager for Snowflake-META using Snowpark."""
+    
+    def __init__(self, session: Optional[Session] = None):
+        """Initialize Snowpark configuration manager.
+        
+        Args:
+            session: Snowpark session. If None, will get or create one.
+        """
+        self.session = session or Session.builder.getOrCreate()
+        self.config = self._get_session_config()
+    
+    def _get_session_config(self) -> Dict[str, Any]:
+        """Get configuration from Snowpark session."""
+        try:
+            return {
+                'database': self.session.get_current_database() or 'SNOWMETA_DB',
+                'schema': self.session.get_current_schema() or 'PUBLIC',
+                'warehouse': self.session.get_current_warehouse() or 'COMPUTE_WH',
+                'role': self.session.get_current_role(),
+                'bronze_schema': 'BRONZE',
+                'silver_schema': 'SILVER',
+                'gold_schema': 'GOLD',
+                'bronze_control_table': 'bronze_control_table',
+                'silver_control_table': 'silver_control_table',
+                'log_level': 'INFO',
+                'log_format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            }
+        except Exception as e:
+            logger.warning(f"Could not get session configuration: {str(e)}")
+            return self._get_default_config()
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration when session info is not available."""
+        return {
+            'database': 'SNOWMETA_DB',
+            'schema': 'PUBLIC',
+            'warehouse': 'COMPUTE_WH',
+            'role': None,
+            'bronze_schema': 'BRONZE',
+            'silver_schema': 'SILVER',
+            'gold_schema': 'GOLD',
+            'bronze_control_table': 'bronze_control_table',
+            'silver_control_table': 'silver_control_table',
+            'log_level': 'INFO',
+            'log_format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        }
+    
+    def get_snowpark_config(self) -> SnowparkConfig:
+        """Get Snowpark configuration object."""
+        return SnowparkConfig(
+            session=self.session,
+            database=self.config['database'],
+            schema=self.config['schema'],
+            warehouse=self.config['warehouse'],
+            role=self.config.get('role'),
+            bronze_schema=self.config['bronze_schema'],
+            silver_schema=self.config['silver_schema'],
+            gold_schema=self.config['gold_schema'],
+            bronze_control_table=self.config['bronze_control_table'],
+            silver_control_table=self.config['silver_control_table'],
+            log_level=self.config['log_level'],
+            log_format=self.config['log_format']
+        )
+    
+    def get_database_config(self) -> Dict[str, Any]:
+        """Get database-specific configuration."""
+        return {
+            'database': self.config['database'],
+            'bronze_schema': self.config['bronze_schema'],
+            'silver_schema': self.config['silver_schema'],
+            'gold_schema': self.config['gold_schema'],
+            'bronze_control_table': self.config['bronze_control_table'],
+            'silver_control_table': self.config['silver_control_table'],
+        }
+    
+    def get_logging_config(self) -> Dict[str, Any]:
+        """Get logging configuration."""
+        return {
+            'log_level': self.config['log_level'],
+            'log_file': None,
+            'log_format': self.config['log_format']
+        }
+    
+    def setup_logging(self):
+        """Setup logging based on configuration."""
+        logging_config = self.get_logging_config()
+        
+        # Configure logging
+        logging.basicConfig(
+            level=getattr(logging, logging_config['log_level']),
+            format=logging_config['log_format'],
+            filename=logging_config.get('log_file'),
+            filemode='a' if logging_config.get('log_file') else None
+        )
+        
+        logger.info("Logging configured successfully for Snowpark session")
+
+
 class ConfigManager:
-    """Configuration manager for Snowflake-META."""
+    """Legacy configuration manager for Snowflake-META.
+    
+    DEPRECATED: Use SnowparkConfigManager instead for new implementations.
+    """
     
     def __init__(self, config_file: Optional[str] = None):
         """Initialize configuration manager.
@@ -221,8 +344,29 @@ class ConfigManager:
             raise
 
 
+def create_snowpark_config(session: Optional[Session] = None) -> SnowparkConfig:
+    """Create Snowpark configuration from session.
+    
+    Args:
+        session: Snowpark session. If None, will get or create one.
+        
+    Returns:
+        SnowparkConfig object with session-based configuration.
+    """
+    config_manager = SnowparkConfigManager(session)
+    return config_manager.get_snowpark_config()
+
 def create_default_config() -> Dict[str, Any]:
-    """Create default configuration."""
+    """Create default configuration.
+    
+    DEPRECATED: Use create_snowpark_config() instead for new implementations.
+    """
+    import warnings
+    warnings.warn(
+        "create_default_config() is deprecated. Use create_snowpark_config() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return {
         'account': 'your_account.snowflakecomputing.com',
         'user': 'your_username',
@@ -251,8 +395,26 @@ def create_default_config() -> Dict[str, Any]:
     }
 
 
+def setup_snowpark_logging(session: Optional[Session] = None):
+    """Setup logging for Snowpark session.
+    
+    Args:
+        session: Snowpark session. If None, will get or create one.
+    """
+    config_manager = SnowparkConfigManager(session)
+    config_manager.setup_logging()
+
 def setup_logging(config_manager: ConfigManager):
-    """Setup logging based on configuration."""
+    """Setup logging based on configuration.
+    
+    DEPRECATED: Use setup_snowpark_logging() instead for new implementations.
+    """
+    import warnings
+    warnings.warn(
+        "setup_logging() with ConfigManager is deprecated. Use setup_snowpark_logging() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     logging_config = config_manager.get_logging_config()
     
     # Configure logging

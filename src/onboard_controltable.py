@@ -1,4 +1,4 @@
-"""OnboardControlTable class provides bronze/silver onboarding features for Snowflake."""
+"""OnboardControlTable class provides bronze/silver onboarding features for Snowflake using Snowpark."""
 
 import copy
 import dataclasses
@@ -8,9 +8,9 @@ import logging
 import ast
 from typing import Dict, Any, List, Optional
 
-import snowflake.connector
-from snowflake.connector import DictCursor
-from snowflake.connector.pandas_tools import write_pandas
+from snowflake.snowpark import Session
+from snowflake.snowpark.functions import col, lit, current_timestamp
+from snowflake.snowpark.types import StructType, StructField, StringType, VariantType, TimestampType
 import pandas as pd
 
 from src.controltable_spec import BronzeControlTableSpec, ControlTableSpecUtils, SilverControlTableSpec
@@ -22,10 +22,10 @@ logger.setLevel(logging.INFO)
 class OnboardControlTable:
     """OnboardControlTable class provides bronze/silver onboarding features for Snowflake."""
 
-    def __init__(self, connection: snowflake.connector.SnowflakeConnection, dict_obj: Dict[str, Any], 
+    def __init__(self, session: Session, dict_obj: Dict[str, Any], 
                  bronze_schema_mapper=None, uc_enabled=False):
-        """Onboard ControlTable Constructor for Snowflake."""
-        self.connection = connection
+        """Onboard ControlTable Constructor for Snowflake using Snowpark."""
+        self.session = session
         self.dict_obj = dict_obj
         self.bronze_dict_obj = copy.deepcopy(dict_obj)
         self.silver_dict_obj = copy.deepcopy(dict_obj)
@@ -776,73 +776,61 @@ class OnboardControlTable:
     # as the original dlt-meta implementation but adapted for Snowflake and pandas DataFrames
     
     def __create_database(self, database: str):
-        """Create database in Snowflake."""
-        cursor = self.connection.cursor()
+        """Create database in Snowflake using Snowpark."""
         try:
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database}")
+            self.session.sql(f"CREATE DATABASE IF NOT EXISTS {database}").collect()
             logger.info(f"Database {database} created or already exists")
         except Exception as e:
             logger.error(f"Error creating database {database}: {str(e)}")
             raise
-        finally:
-            cursor.close()
 
     def __register_table_in_metastore(self, database: str, table: str, path: str):
-        """Register table in Snowflake metastore."""
-        cursor = self.connection.cursor()
+        """Register table in Snowflake metastore using Snowpark."""
         try:
             # In Snowflake, tables are automatically registered when created
             logger.info(f"Table {database}.{table} registered in metastore")
         except Exception as e:
             logger.error(f"Error registering table {database}.{table}: {str(e)}")
             raise
-        finally:
-            cursor.close()
 
     def __show_table_data(self, table_name: str):
-        """Show table data in Snowflake."""
-        cursor = self.connection.cursor()
+        """Show table data in Snowflake using Snowpark."""
         try:
-            cursor.execute(f"SELECT * FROM {table_name} LIMIT 10")
-            results = cursor.fetchall()
+            df = self.session.table(table_name).limit(10)
+            results = df.collect()
             logger.info(f"Table {table_name} data: {results}")
         except Exception as e:
             logger.error(f"Error showing table data for {table_name}: {str(e)}")
             raise
-        finally:
-            cursor.close()
 
     def __write_dataframe_to_snowflake(self, df: pd.DataFrame, table_name: str, mode: str):
-        """Write DataFrame to Snowflake table."""
+        """Write DataFrame to Snowflake table using Snowpark."""
         try:
             if mode == "overwrite":
                 # Drop and recreate table
-                cursor = self.connection.cursor()
-                cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-                cursor.close()
+                self.session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
             
-            write_pandas(self.connection, df, table_name, auto_create_table=True)
+            # Convert pandas DataFrame to Snowpark DataFrame and write to table
+            snowpark_df = self.session.create_dataframe(df)
+            snowpark_df.write.mode("overwrite" if mode == "overwrite" else "append").save_as_table(table_name)
             logger.info(f"DataFrame written to {table_name} with mode {mode}")
         except Exception as e:
             logger.error(f"Error writing DataFrame to {table_name}: {str(e)}")
             raise
 
     def __read_table_from_snowflake(self, table_name: str) -> pd.DataFrame:
-        """Read table from Snowflake as DataFrame."""
+        """Read table from Snowflake as DataFrame using Snowpark."""
         try:
-            cursor = self.connection.cursor()
-            cursor.execute(f"SELECT * FROM {table_name}")
-            results = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-            cursor.close()
-            return pd.DataFrame(results, columns=columns)
+            snowpark_df = self.session.table(table_name)
+            pandas_df = snowpark_df.to_pandas()
+            return pandas_df
         except Exception as e:
             logger.error(f"Error reading table {table_name}: {str(e)}")
             raise
 
     def __merge_dataframes(self, new_df: pd.DataFrame, table_name: str, 
                           merge_keys: List[str], existing_columns: List[str]):
-        """Merge new DataFrame with existing table data."""
+        """Merge new DataFrame with existing table data using Snowpark."""
         try:
             # Read existing data
             existing_df = self.__read_table_from_snowflake(table_name)

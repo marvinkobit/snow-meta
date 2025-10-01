@@ -1,13 +1,12 @@
-"""Control Table Spec related utilities for Snowflake."""
+"""Control Table Spec related utilities for Snowflake using Snowpark."""
 import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-import snowflake.connector
-from snowflake.connector import DictCursor
-from snowflake.connector.pandas_tools import write_pandas
+from snowflake.snowpark import Session
+from snowflake.snowpark.functions import col, lit
 
 logger = logging.getLogger("snow-meta")
 logger.setLevel(logging.INFO)
@@ -214,19 +213,17 @@ class ControlTableSpecUtils:
 
     @staticmethod
     def _get_control_table_spec(
-        connection: snowflake.connector.SnowflakeConnection,
+        session: Session,
         layer: str,
         control_table_spec_df: Optional[Any] = None,
         group: Optional[str] = None,
         dataflow_ids: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get ControlTableSpec for given parameters in Snowflake.
+        """Get ControlTableSpec for given parameters in Snowflake using Snowpark.
 
-        Can be configured using connection parameters, used for optionally filtering
+        Can be configured using session parameters, used for optionally filtering
         the returned data to a group or list of DataflowIDs
         """
-        cursor = connection.cursor(DictCursor)
-        
         # Build the query based on parameters
         if layer == "bronze":
             table_name = "bronze_control_table"
@@ -235,20 +232,6 @@ class ControlTableSpecUtils:
         else:
             raise ValueError(f"Unsupported layer: {layer}")
 
-        query = f"SELECT * FROM {table_name}"
-        conditions = []
-        
-        if group:
-            conditions.append(f"dataFlowGroup = '{group}'")
-        
-        if dataflow_ids:
-            ids_list = dataflow_ids.split(',')
-            ids_str = "', '".join(ids_list)
-            conditions.append(f"dataFlowId IN ('{ids_str}')")
-        
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
         # Get latest version for each dataFlowId
         query = f"""
         WITH ranked_data AS (
@@ -258,6 +241,15 @@ class ControlTableSpecUtils:
         )
         SELECT * FROM ranked_data WHERE rn = 1
         """
+        
+        conditions = []
+        if group:
+            conditions.append(f"dataFlowGroup = '{group}'")
+        
+        if dataflow_ids:
+            ids_list = dataflow_ids.split(',')
+            ids_str = "', '".join(ids_list)
+            conditions.append(f"dataFlowId IN ('{ids_str}')")
         
         if conditions:
             query = f"""
@@ -270,17 +262,14 @@ class ControlTableSpecUtils:
             SELECT * FROM ranked_data WHERE rn = 1
             """
         
-        cursor.execute(query)
-        results = cursor.fetchall()
-        cursor.close()
-        
-        return results
+        results = session.sql(query).collect()
+        return [row.asDict() for row in results]
 
     @staticmethod
-    def get_bronze_control_table_spec(connection: snowflake.connector.SnowflakeConnection) -> List[BronzeControlTableSpec]:
-        """Get bronze control table spec from Snowflake."""
-        ControlTableSpecUtils.check_snowflake_controltable_conf_params(connection, "bronze")
-        control_table_spec_rows = ControlTableSpecUtils._get_control_table_spec(connection, "bronze")
+    def get_bronze_control_table_spec(session: Session) -> List[BronzeControlTableSpec]:
+        """Get bronze control table spec from Snowflake using Snowpark."""
+        ControlTableSpecUtils.check_snowflake_controltable_conf_params(session, "bronze")
+        control_table_spec_rows = ControlTableSpecUtils._get_control_table_spec(session, "bronze")
         bronze_control_table_spec_list: List[BronzeControlTableSpec] = []
         
         for row in control_table_spec_rows:
@@ -302,11 +291,11 @@ class ControlTableSpecUtils:
         return onboarding_row_dict
 
     @staticmethod
-    def get_silver_control_table_spec(connection: snowflake.connector.SnowflakeConnection) -> List[SilverControlTableSpec]:
-        """Get silver control table spec list from Snowflake."""
-        ControlTableSpecUtils.check_snowflake_controltable_conf_params(connection, "silver")
+    def get_silver_control_table_spec(session: Session) -> List[SilverControlTableSpec]:
+        """Get silver control table spec list from Snowflake using Snowpark."""
+        ControlTableSpecUtils.check_snowflake_controltable_conf_params(session, "silver")
 
-        control_table_spec_rows = ControlTableSpecUtils._get_control_table_spec(connection, "silver")
+        control_table_spec_rows = ControlTableSpecUtils._get_control_table_spec(session, "silver")
         silver_control_table_spec_list: List[SilverControlTableSpec] = []
         
         for row in control_table_spec_rows:
@@ -319,10 +308,8 @@ class ControlTableSpecUtils:
         return silver_control_table_spec_list
 
     @staticmethod
-    def check_snowflake_controltable_conf_params(connection: snowflake.connector.SnowflakeConnection, layer_arg: str):
-        """Check control table config params for Snowflake."""
-        cursor = connection.cursor()
-        
+    def check_snowflake_controltable_conf_params(session: Session, layer_arg: str):
+        """Check control table config params for Snowflake using Snowpark."""
         # Check if the control table exists
         if layer_arg == "bronze":
             table_name = "bronze_control_table"
@@ -332,15 +319,12 @@ class ControlTableSpecUtils:
             raise ValueError(f"Unsupported layer: {layer_arg}")
         
         try:
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-            cursor.fetchone()
+            session.sql(f"SELECT COUNT(*) FROM {table_name}").collect()
         except Exception as e:
             raise Exception(
                 f"Control table {table_name} does not exist or is not accessible. "
                 f"Please ensure the table is created and accessible. Error: {str(e)}"
             )
-        finally:
-            cursor.close()
 
     @staticmethod
     def get_partition_cols(partition_columns: Optional[List[str]]) -> Optional[List[str]]:
