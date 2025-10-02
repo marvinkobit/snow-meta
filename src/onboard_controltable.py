@@ -121,33 +121,37 @@ class OnboardControlTable:
 
     def register_bronze_control_table_spec_tables(self):
         """Register bronze control table specs tables in Snowflake."""
-        self.__create_database(self.dict_obj["database"])
+        # Use the database and schema from onboarding_params_map
+        database = self.dict_obj["database"]
+        schema = self.dict_obj.get("schema", "PUBLIC")  # Use schema from params or default to PUBLIC
+        table = self.dict_obj["bronze_control_table"]
+        full_table_name = f"{database}.{schema}.{table}"
+        
         self.__register_table_in_metastore(
-            self.dict_obj["database"],
-            self.dict_obj["bronze_control_table"],
+            database,
+            schema,
+            table,
             self.dict_obj["bronze_control_table_path"],
         )
-        logger.info(
-            f"""onboarded bronze table={self.dict_obj["database"]}.{self.dict_obj["bronze_control_table"]}"""
-        )
-        self.__show_table_data(
-            f"""{self.dict_obj["database"]}.{self.dict_obj["bronze_control_table"]}"""
-        )
+        logger.info(f"onboarded bronze table={full_table_name}")
+        self.__show_table_data(full_table_name)
 
     def register_silver_control_table_spec_tables(self):
         """Register silver control table specs tables in Snowflake."""
-        self.__create_database(self.dict_obj["database"])
+        # Use the database and schema from onboarding_params_map
+        database = self.dict_obj["database"]
+        schema = self.dict_obj.get("schema", "PUBLIC")  # Use schema from params or default to PUBLIC
+        table = self.dict_obj["silver_control_table"]
+        full_table_name = f"{database}.{schema}.{table}"
+        
         self.__register_table_in_metastore(
-            self.dict_obj["database"],
-            self.dict_obj["silver_control_table"],
+            database,
+            schema,
+            table,
             self.dict_obj["silver_control_table_path"],
         )
-        logger.info(
-            f"""onboarded silver table={self.dict_obj["database"]}.{self.dict_obj["silver_control_table"]}"""
-        )
-        self.__show_table_data(
-            f"""{self.dict_obj["database"]}.{self.dict_obj["silver_control_table"]}"""
-        )
+        logger.info(f"onboarded silver table={full_table_name}")
+        self.__show_table_data(full_table_name)
 
     def onboard_silver_control_table_spec(self):
         """
@@ -217,7 +221,7 @@ class OnboardControlTable:
                 )
             else:
                 self.__register_table_in_metastore(
-                    database, table, dict_obj["silver_control_table_path"]
+                    database, dict_obj.get("schema", "PUBLIC"), table, dict_obj["silver_control_table_path"]
                 )
                 original_control_table_df = self.__read_table_from_snowflake(
                     f"{database}.{table}"
@@ -307,7 +311,7 @@ class OnboardControlTable:
                 )
             else:
                 self.__register_table_in_metastore(
-                    database, table, dict_obj["bronze_control_table_path"]
+                    database, dict_obj.get("schema", "PUBLIC"), table, dict_obj["bronze_control_table_path"]
                 )
                 original_control_table_df = self.__read_table_from_snowflake(
                     f"{database}.{table}"
@@ -782,22 +786,15 @@ class OnboardControlTable:
     # Additional helper methods would be implemented here following the same pattern
     # as the original dlt-meta implementation but adapted for Snowflake and pandas DataFrames
     
-    def __create_database(self, database: str):
-        """Create database in Snowflake using Snowpark."""
-        try:
-            self.session.sql(f"CREATE DATABASE IF NOT EXISTS {database}").collect()
-            logger.info(f"Database {database} created or already exists")
-        except Exception as e:
-            logger.error(f"Error creating database {database}: {str(e)}")
-            raise
 
-    def __register_table_in_metastore(self, database: str, table: str, path: str):
+    def __register_table_in_metastore(self, database: str, schema: str, table: str, path: str):
         """Register table in Snowflake metastore using Snowpark."""
         try:
+            full_table_name = f"{database}.{schema}.{table}"
             # In Snowflake, tables are automatically registered when created
-            logger.info(f"Table {database}.{table} registered in metastore")
+            logger.info(f"Table {full_table_name} registered in metastore")
         except Exception as e:
-            logger.error(f"Error registering table {database}.{table}: {str(e)}")
+            logger.error(f"Error registering table {full_table_name}: {str(e)}")
             raise
 
     def __show_table_data(self, table_name: str):
@@ -813,16 +810,26 @@ class OnboardControlTable:
     def __write_dataframe_to_snowflake(self, df: pd.DataFrame, table_name: str, mode: str):
         """Write DataFrame to Snowflake table using Snowpark."""
         try:
+            # Extract database and schema from the table_name or use from dict_obj
+            if "." in table_name:
+                # If table_name already includes database.schema.table format
+                full_table_name = table_name
+            else:
+                # Use database and schema from onboarding_params_map
+                database = self.dict_obj["database"]
+                schema = self.dict_obj.get("schema", "PUBLIC")
+                full_table_name = f"{database}.{schema}.{table_name}"
+            
             if mode == "overwrite":
                 # Drop and recreate table
-                self.session.sql(f"DROP TABLE IF EXISTS {table_name}").collect()
+                self.session.sql(f"DROP TABLE IF EXISTS {full_table_name}").collect()
             
             # Convert pandas DataFrame to Snowpark DataFrame and write to table
             snowpark_df = self.session.create_dataframe(df)
-            snowpark_df.write.mode("overwrite" if mode == "overwrite" else "append").save_as_table(table_name)
-            logger.info(f"DataFrame written to {table_name} with mode {mode}")
+            snowpark_df.write.mode("overwrite" if mode == "overwrite" else "append").save_as_table(full_table_name)
+            logger.info(f"DataFrame written to {full_table_name} with mode {mode}")
         except Exception as e:
-            logger.error(f"Error writing DataFrame to {table_name}: {str(e)}")
+            logger.error(f"Error writing DataFrame to {full_table_name}: {str(e)}")
             raise
 
     def __read_table_from_snowflake(self, table_name: str) -> pd.DataFrame:
