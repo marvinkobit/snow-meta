@@ -1,0 +1,40 @@
+[
+    {
+        "data_flow_id": "user_data_flow_001",
+        "data_flow_group": "user_management",
+        "source_format": "snowflake",
+        "source_details": {
+            "source_database_dev": "SOURCE_DB",
+            "source_table": "users",
+            "source_schema_path": ""
+        },
+        "bronze_database_dev": "SNOWMETA_DB",
+        "bronze_table": "bronze_users",
+        "bronze_table_path_dev": "/tmp/bronze_users",
+        "bronze_table_comment": "Bronze layer for user data",
+        "bronze_table_properties": {
+            "comment": "Bronze users table",
+            "data_retention_time_in_days": 30
+        },
+        "bronze_partition_columns": "created_date",
+        "bronze_cluster_by": ["user_id"],
+        "silver_database_dev": "SNOWMETA_DB", 
+        "silver_table": "silver_users",
+        "silver_table_path_dev": "/tmp/silver_users",
+        "silver_table_comment": "Silver layer for user data",
+        "silver_table_properties": {
+            "comment": "Silver users table",
+            "data_retention_time_in_days": 90
+        },
+        "silver_partition_columns": "created_date",
+        "silver_cluster_by": ["user_id"],
+        "silver_transformation_json_dev": [
+            {
+                "target_table": "silver_users",
+                "select_exp": ["user_id", "username", "email", "created_date", "updated_date"],
+                "where_clause": ["user_id IS NOT NULL"],
+                "target_partition_cols": ["created_date"]
+            }
+        ]
+    }
+]
