@@ -60,20 +60,25 @@ class OnboardControlTable:
             dict_obj: Dictionary to validate
 
         Raises:
-            ValueError: If required attributes are missing
+            ValueError: If required attributes are missing or extra attributes are present
         """
         if sorted(set(attributes)) != sorted(set(dict_obj.keys())):
             attributes_keys = set(dict_obj.keys())
+            missing_attrs = set(attributes).difference(attributes_keys)
+            extra_attrs = attributes_keys.difference(set(attributes))
+            
             logger.info("In validate dict attributes")
             logger.info(f"expected: {set(attributes)}, actual: {attributes_keys}")
-            logger.info(
-                "missing attributes : {}".format(
-                    set(attributes).difference(attributes_keys)
-                )
-            )
-            raise ValueError(
-                f"missing attributes : {set(attributes).difference(attributes_keys)}"
-            )
+            logger.info(f"missing attributes : {missing_attrs}")
+            logger.info(f"extra attributes : {extra_attrs}")
+            
+            error_parts = []
+            if missing_attrs:
+                error_parts.append(f"missing attributes: {missing_attrs}")
+            if extra_attrs:
+                error_parts.append(f"extra attributes: {extra_attrs}")
+            
+            raise ValueError("; ".join(error_parts))
 
     def onboard_controltable_specs(self):
         """
@@ -264,6 +269,7 @@ class OnboardControlTable:
         attributes = [
             "onboarding_file_path",
             "database",
+            "schema",
             "env",
             "bronze_control_table",
             "import_author",
