@@ -3,7 +3,7 @@
       "data_flow_id":"id_1001",
       "data_flow_group":"A1",
       "source_system":"AWS_S3",
-      "source_format":"cloudFiles",
+      "source_format":"snowflake",
       "source_details":{
          "source_database":"RAW",
          "source_schema":"SNOWMETA_CONFIG",
