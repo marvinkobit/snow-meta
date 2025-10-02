@@ -212,6 +212,7 @@ class OnboardControlTable:
         attributes = [
             "onboarding_file_path",
             "database",
+            "schema",
             "env",
             "silver_control_table",
             "import_author",
