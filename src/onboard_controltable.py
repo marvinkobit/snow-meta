@@ -395,7 +395,31 @@ class OnboardControlTable:
             snowpark_df = self.session.read.json(onboarding_file_path)
             
             # Convert to pandas DataFrame
-            onboarding_df = snowpark_df.to_pandas()
+            raw_df = snowpark_df.to_pandas()
+            
+            # Parse the JSON structure properly
+            # The JSON content is typically in the first column (usually named $1)
+            json_column = raw_df.columns[0]  # Get the first column name
+            
+            # Parse JSON and normalize the structure
+            json_data = []
+            for _, row in raw_df.iterrows():
+                json_content = row[json_column]
+                if isinstance(json_content, str):
+                    # If it's a string, parse it as JSON
+                    parsed_json = json.loads(json_content)
+                else:
+                    # If it's already a dict/object, use it directly
+                    parsed_json = json_content
+                
+                # Handle both single objects and arrays
+                if isinstance(parsed_json, list):
+                    json_data.extend(parsed_json)
+                else:
+                    json_data.append(parsed_json)
+            
+            # Create DataFrame from parsed JSON data
+            onboarding_df = pd.json_normalize(json_data)
             
             logger.info("Onboarding file loaded successfully from stage")
             self.onboard_file_type = "json"
