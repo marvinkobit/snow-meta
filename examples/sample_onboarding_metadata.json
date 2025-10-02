@@ -8,7 +8,7 @@
          "source_database":"RAW",
          "source_schema":"SNOWMETA_CONFIG",
          "source_table":"users",
-         "source_path_it":"@RAW.SNOWMETA_CONFIG.S3_STAGE/etbanks/full/",
+         "source_path_dev":"@RAW.SNOWMETA_CONFIG.S3_STAGE/etbanks/full/",
          "source_metadata":{
             "include_autoloader_metadata_column":"true",
             "autoloader_metadata_col_name":"source_metadata",
@@ -19,7 +19,7 @@
             }
          }
       },
-      "bronze_database_it":"ANALYTICS",
+      "bronze_database_dev":"ANALYTICS",
       "bronze_schema":"SNOWMETA_BRONZE",
       "bronze_table":"users",
       "bronze_reader_options":{
@@ -27,8 +27,8 @@
          "cloudFiles.infercolumntypes":"true",
          "cloudFiles.rescueddatacolumn":"_rescued_data"
       },
-      "bronze_data_quality_expectations_json_it":"",
-      "silver_database_it":"ANALYTICS",
+      "bronze_data_quality_expectations_json_dev":"",
+      "silver_database_dev":"ANALYTICS",
       "silver_schema":"SNOWMETA_SILVER",
       "silver_table":"users",
       "silver_cdc_apply_changes":{
@@ -38,6 +38,6 @@
          "sequence_by":"landing_timestamp",
          "scd_type":"1"
       },
-      "silver_transformation_json_it":"@RAW.SNOWMETA_CONFIG.MYSTAGE/silvertransformations/sample_silver_transformations.json"
+      "silver_transformation_json_dev":"@RAW.SNOWMETA_CONFIG.MYSTAGE/silvertransformations/sample_silver_transformations.json"
    }
 ]
