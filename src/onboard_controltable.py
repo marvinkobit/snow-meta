@@ -22,20 +22,11 @@ logger.setLevel(logging.INFO)
 class OnboardControlTable:
     """OnboardControlTable class provides bronze/silver onboarding features for Snowflake.
     
-    This class supports reading onboarding files from:
-    - Local file system: "path/to/file.json"
+    This class supports reading onboarding files from Snowflake stages:
     - Snowflake Stages: "@MY_STAGE/path/to/file.json"
     - Snowflake Volumes: '@"DATABASE"."SCHEMA"."VOLUME"/path/to/file.json'
     
     Example:
-        # Using local file
-        params = {
-            "onboarding_file_path": "onboarding_files/config.json",
-            "database": "RAW",
-            "schema": "SNOWMETA_CONFIG",
-            ...
-        }
-        
         # Using Snowflake stage
         params = {
             "onboarding_file_path": "@MY_STAGE/configs/onboarding.json",
@@ -55,7 +46,7 @@ class OnboardControlTable:
         Args:
             session: Snowflake Snowpark session
             dict_obj: Dictionary containing onboarding configuration including:
-                - onboarding_file_path: Path to onboarding file (local or stage path)
+                - onboarding_file_path: Path to onboarding file in Snowflake stage (must start with @)
                 - database: Target database name
                 - schema: Target schema name
                 - bronze_control_table: Bronze control table name
@@ -383,137 +374,49 @@ class OnboardControlTable:
         _dict.update(filtered)
         return _dict
 
-    def convert_yml_to_json(self, onboarding_file_path: str) -> str:
-        """Get dataframe from YAML onboarding file.
-        Args:
-            onboarding_file_path (str): Path to YAML onboarding file
-        Returns:
-            str: Path to converted JSON file
-        Raises:
-            Exception: If duplicate data_flow_ids found
-        """
-        # Read YAML file as text
-        with open(onboarding_file_path, 'r') as yaml_file:
-            yaml_data = yaml.safe_load(yaml_file)
 
-        json_data = json.dumps(yaml_data, indent=4)
-
-        onboarding_file_path = onboarding_file_path.replace(".yml", "_yml.json")
-
-        with open(onboarding_file_path, 'w') as json_file:
-            json_file.write(json_data)
-        return onboarding_file_path
-
-    def __read_file_from_stage(self, stage_path: str) -> str:
-        """Read file content from Snowflake stage.
-        
-        Args:
-            stage_path: Stage path starting with @ (e.g., @my_stage/path/to/file.json)
-            
-        Returns:
-            File content as string
-        """
-        try:
-            # Use GET to download file from stage to a temporary location
-            import tempfile
-            import os
-            
-            # Create a temporary directory
-            temp_dir = tempfile.mkdtemp()
-            
-            # Extract filename from stage path
-            filename = stage_path.split('/')[-1]
-            
-            # Download file from stage
-            get_cmd = f"GET {stage_path} file://{temp_dir}/"
-            self.session.sql(get_cmd).collect()
-            
-            # Read the downloaded file
-            local_file_path = os.path.join(temp_dir, filename)
-            
-            # Handle gzipped files (Snowflake may compress files)
-            if os.path.exists(local_file_path + '.gz'):
-                import gzip
-                with gzip.open(local_file_path + '.gz', 'rt') as f:
-                    content = f.read()
-            elif os.path.exists(local_file_path):
-                with open(local_file_path, 'r') as f:
-                    content = f.read()
-            else:
-                raise FileNotFoundError(f"File not found after GET: {local_file_path}")
-            
-            # Clean up temp directory
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            
-            logger.info(f"Successfully read file from stage: {stage_path}")
-            return content
-            
-        except Exception as e:
-            raise Exception(
-                f"Failed to read file from Snowflake stage '{stage_path}': {str(e)}\n"
-                f"Please check:\n"
-                f"  1. The stage exists and is accessible\n"
-                f"  2. The file exists at the specified path in the stage\n"
-                f"  3. You have READ permission on the stage"
-            )
 
     def __get_onboarding_file_dataframe(self, onboarding_file_path: str) -> pd.DataFrame:
-        """Get onboarding file as pandas DataFrame.
+        """Get onboarding file as pandas DataFrame from Snowflake stage.
         
-        Supports both local file paths and Snowflake stage paths (starting with @).
-        """
-        onboarding_df = None
-        is_stage_path = onboarding_file_path.strip().startswith('@')
-        
-        # Handle YAML conversion first
-        if onboarding_file_path.lower().endswith((".yml", ".yaml")):
-            if is_stage_path:
-                # Read YAML from stage and convert to JSON
-                yaml_content = self.__read_file_from_stage(onboarding_file_path)
-                data = yaml.safe_load(yaml_content)
-                # For consistency, we'll work with the data directly
-            else:
-                onboarding_file_path = self.convert_yml_to_json(onboarding_file_path)
-        
-        if onboarding_file_path.lower().endswith(".json") or is_stage_path:
-            if is_stage_path:
-                # Read from Snowflake stage
-                logger.info(f"Reading onboarding file from Snowflake stage: {onboarding_file_path}")
-                json_content = self.__read_file_from_stage(onboarding_file_path)
-                data = json.loads(json_content)
-            else:
-                # Read from local filesystem
-                try:
-                    with open(onboarding_file_path, 'r') as json_file:
-                        data = json.load(json_file)
-                except FileNotFoundError:
-                    import os
-                    cwd = os.getcwd()
-                    raise FileNotFoundError(
-                        f"Onboarding file not found: '{onboarding_file_path}'\n"
-                        f"Current working directory: {cwd}\n"
-                        f"Please check:\n"
-                        f"  1. The file exists at the specified path\n"
-                        f"  2. Use relative path (e.g., 'onboarding_files/file.json') if file is in current directory\n"
-                        f"  3. Use absolute path if file is elsewhere\n"
-                        f"  4. Use stage path (e.g., '@my_stage/path/file.json') for Snowflake stage files"
-                    )
+        Args:
+            onboarding_file_path: Stage path starting with @ (e.g., @my_stage/path/to/file.json)
             
-            onboarding_df = pd.DataFrame(data)
-            logger.info("Onboarding file loaded successfully")
+        Returns:
+            pandas DataFrame with onboarding data
+        """
+        try:
+            # Validate that it's a stage path
+            if not onboarding_file_path.strip().startswith('@'):
+                raise ValueError(f"Only Snowflake stage paths are supported. Path must start with @: {onboarding_file_path}")
+            
+            # Use Snowpark's built-in read.json method
+            logger.info(f"Reading onboarding file from Snowflake stage: {onboarding_file_path}")
+            snowpark_df = self.session.read.json(onboarding_file_path)
+            
+            # Convert to pandas DataFrame
+            onboarding_df = snowpark_df.to_pandas()
+            
+            logger.info("Onboarding file loaded successfully from stage")
             self.onboard_file_type = "json"
             
             # Check for duplicate data_flow_ids
-            if onboarding_df['data_flow_id'].duplicated().any():
+            if 'data_flow_id' in onboarding_df.columns and onboarding_df['data_flow_id'].duplicated().any():
                 duplicates = onboarding_df[onboarding_df['data_flow_id'].duplicated()]
                 logger.error(f"Duplicate data_flow_ids found: {duplicates['data_flow_id'].tolist()}")
                 raise Exception("onboarding file have duplicated data_flow_ids!")
-        else:
+                
+            return onboarding_df
+            
+        except Exception as e:
             raise Exception(
-                "Onboarding file format not supported! Please provide json or yaml file format"
+                f"Failed to read onboarding file from Snowflake stage '{onboarding_file_path}': {str(e)}\n"
+                f"Please check:\n"
+                f"  1. The stage exists and is accessible\n"
+                f"  2. The file exists at the specified path in the stage\n"
+                f"  3. You have READ permission on the stage\n"
+                f"  4. The file is a valid JSON format"
             )
-        return onboarding_df
 
     def __add_audit_columns(self, df: pd.DataFrame, dict_obj: Dict[str, Any]) -> pd.DataFrame:
         """Add_audit_columns method will add AuditColumns like version, dates, author.
