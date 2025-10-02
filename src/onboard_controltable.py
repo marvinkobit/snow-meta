@@ -419,7 +419,7 @@ class OnboardControlTable:
                     json_data.append(parsed_json)
             
             # Create DataFrame from parsed JSON data
-            onboarding_df = pd.json_normalize(json_data)
+            onboarding_df = pd.json_normalize(json_data,max_level=0)
             
             logger.info("Onboarding file loaded successfully from stage")
             self.onboard_file_type = "json"
