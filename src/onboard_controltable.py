@@ -882,12 +882,12 @@ class OnboardControlTable:
             else:
                 # Use database and schema from onboarding_params_map
                 database = self.dict_obj["database"]
-                schema = self.dict_obj.get("schema", "PUBLIC")
+                schema = self.dict_obj["schema"]
                 full_table_name = f"{database}.{schema}.{table_name}"
             
             if mode == "overwrite":
                 # Drop and recreate table
-                self.session.sql(f"DROP TABLE IF EXISTS {full_table_name}").collect()
+                self.session.drop_table_if_exists(full_table_name)
             
             # Convert pandas DataFrame to Snowpark DataFrame and write to table
             snowpark_df = self.session.create_dataframe(df)
