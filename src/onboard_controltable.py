@@ -23,18 +23,18 @@ class OnboardControlTable:
     """OnboardControlTable class provides bronze/silver onboarding features for Snowflake."""
 
     def __init__(self, session: Session, dict_obj: Dict[str, Any], 
-                 bronze_schema_mapper=None, uc_enabled=False):
+                 bronze_schema_mapper=None, horizon_enabled=False):
         """Onboard ControlTable Constructor for Snowflake using Snowpark."""
         self.session = session
         self.dict_obj = dict_obj
         self.bronze_dict_obj = copy.deepcopy(dict_obj)
         self.silver_dict_obj = copy.deepcopy(dict_obj)
-        self.uc_enabled = uc_enabled
-        self.__initialize_paths(uc_enabled)
+        self.horizon_enabled = horizon_enabled
+        self.__initialize_paths(horizon_enabled)
         self.bronze_schema_mapper = bronze_schema_mapper
         self.onboard_file_type = None
 
-    def __initialize_paths(self, uc_enabled):
+    def __initialize_paths(self, horizon_enabled):
         """Initialize paths for bronze and silver control tables."""
         if "silver_control_table" in self.bronze_dict_obj:
             del self.bronze_dict_obj["silver_control_table"]
@@ -45,7 +45,7 @@ class OnboardControlTable:
             del self.silver_dict_obj["bronze_control_table"]
         if "bronze_control_table_path" in self.silver_dict_obj:
             del self.silver_dict_obj["bronze_control_table_path"]
-        if uc_enabled:
+        if horizon_enabled:
             if "bronze_control_table_path" in self.bronze_dict_obj:
                 del self.bronze_dict_obj["bronze_control_table_path"]
             if "silver_control_table_path" in self.silver_dict_obj:
@@ -89,8 +89,8 @@ class OnboardControlTable:
         - version: The version of the import.
         - overwrite: Whether to overwrite existing control table specs or not.
 
-        If the `uc_enabled` flag is set to True, the dictionary object must contain all the attributes listed above.
-        If the `uc_enabled` flag is set to False, the dictionary object must contain all the attributes listed above
+        If the `horizon_enabled` flag is set to True, the dictionary object must contain all the attributes listed above.
+        If the `horizon_enabled` flag is set to False, the dictionary object must contain all the attributes listed above
         except for `bronze_control_table_path` and `silver_control_table_path`.
 
         This method calls the `onboard_bronze_control_table_spec` and `onboard_silver_control_table_spec` methods to onboard
@@ -99,6 +99,7 @@ class OnboardControlTable:
         attributes = [
             "onboarding_file_path",
             "database",
+            "schema",
             "env",
             "bronze_control_table",
             "silver_control_table",
@@ -106,7 +107,7 @@ class OnboardControlTable:
             "version",
             "overwrite",
         ]
-        if self.uc_enabled:
+        if self.horizon_enabled:
             if "bronze_control_table_path" in self.dict_obj:
                 del self.dict_obj["bronze_control_table_path"]
             if "silver_control_table_path" in self.dict_obj:
@@ -165,7 +166,7 @@ class OnboardControlTable:
                     - database (str): Name of the database.
                     - env (str): Environment name.
                     - silver_control_table (str): Name of the silver control table spec table.
-                    - silver_control_table_path (str): Path of the silver control table spec file. if uc_enabled is False
+                    - silver_control_table_path (str): Path of the silver control table spec file. if horizon_enabled is False
                     - import_author (str): Name of the import author.
                     - version (str): Version of the control table spec.
                     - overwrite (str): Whether to overwrite the existing control table spec table/file or not.
@@ -180,7 +181,7 @@ class OnboardControlTable:
             "overwrite",
         ]
         dict_obj = self.silver_dict_obj
-        if self.uc_enabled:
+        if self.horizon_enabled:
             self.__validate_dict_attributes(attributes, dict_obj)
         else:
             attributes.append("silver_control_table_path")
@@ -206,7 +207,7 @@ class OnboardControlTable:
         table = dict_obj["silver_control_table"]
 
         if dict_obj["overwrite"] == "True":
-            if self.uc_enabled:
+            if self.horizon_enabled:
                 self.__write_dataframe_to_snowflake(
                     silver_control_table_spec_df, f"{database}.{table}", "overwrite"
                 )
@@ -215,7 +216,7 @@ class OnboardControlTable:
                     silver_control_table_spec_df, f"{database}.{table}", "overwrite"
                 )
         else:
-            if self.uc_enabled:
+            if self.horizon_enabled:
                 original_control_table_df = self.__read_table_from_snowflake(
                     f"{database}.{table}"
                 )
@@ -233,7 +234,7 @@ class OnboardControlTable:
                 ["dataFlowId"],
                 original_control_table_df.columns,
             )
-        if not self.uc_enabled:
+        if not self.horizon_enabled:
             self.register_silver_control_table_spec_tables()
 
     def onboard_bronze_control_table_spec(self):
@@ -249,7 +250,7 @@ class OnboardControlTable:
                 - database (str): Name of the database.
                 - env (str): Environment name.
                 - bronze_control_table (str): Name of the bronze control table spec table.
-                - bronze_control_table_path (str): Path of the bronze control table spec file. if uc_enabled is False
+                - bronze_control_table_path (str): Path of the bronze control table spec file. if horizon_enabled is False
                 - import_author (str): Name of the import author.
                 - version (str): Version of the control table spec.
                 - overwrite (str): Whether to overwrite the existing control table spec table/file or not.
@@ -270,7 +271,7 @@ class OnboardControlTable:
             "overwrite",
         ]
         dict_obj = self.bronze_dict_obj
-        if self.uc_enabled:
+        if self.horizon_enabled:
             self.__validate_dict_attributes(attributes, dict_obj)
         else:
             attributes.append("bronze_control_table_path")
@@ -296,7 +297,7 @@ class OnboardControlTable:
         database = dict_obj["database"]
         table = dict_obj["bronze_control_table"]
         if dict_obj["overwrite"] == "True":
-            if self.uc_enabled:
+            if self.horizon_enabled:
                 self.__write_dataframe_to_snowflake(
                     bronze_control_table_spec_df, f"{database}.{table}", "overwrite"
                 )
@@ -305,7 +306,7 @@ class OnboardControlTable:
                     bronze_control_table_spec_df, f"{database}.{table}", "overwrite"
                 )
         else:
-            if self.uc_enabled:
+            if self.horizon_enabled:
                 original_control_table_df = self.__read_table_from_snowflake(
                     f"{database}.{table}"
                 )
@@ -324,7 +325,7 @@ class OnboardControlTable:
                 ["dataFlowId"],
                 original_control_table_df.columns,
             )
-        if not self.uc_enabled:
+        if not self.horizon_enabled:
             self.register_bronze_control_table_spec_tables()
 
     def __delete_none(self, _dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -495,7 +496,7 @@ class OnboardControlTable:
             if "bronze_table_comment" in onboarding_row:
                 bronze_target_details["comment"] = onboarding_row["bronze_table_comment"]
             
-            if not self.uc_enabled:
+            if not self.horizon_enabled:
                 if f"bronze_table_path_{env}" in onboarding_row:
                     bronze_target_details["path"] = onboarding_row[f"bronze_table_path_{env}"]
                 else:
@@ -667,7 +668,7 @@ class OnboardControlTable:
             if "silver_table_comment" in onboarding_row:
                 silver_target_details["comment"] = onboarding_row["silver_table_comment"]
             
-            if not self.uc_enabled:
+            if not self.horizon_enabled:
                 bronze_target_details["path"] = onboarding_row[f"bronze_table_path_{env}"]
                 silver_target_details["path"] = onboarding_row[f"silver_table_path_{env}"]
             
