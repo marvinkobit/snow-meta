@@ -242,33 +242,34 @@ class OnboardControlTable:
         silver_fields = [field.name for field in dataclasses.fields(SilverControlTableSpec)]
         silver_control_table_spec_df = silver_control_table_spec_df[silver_fields]
         database = dict_obj["database"]
+        schema = dict_obj["schema"]
         table = dict_obj["silver_control_table"]
 
         if dict_obj["overwrite"] == "True":
             if self.horizon_enabled:
                 self.__write_dataframe_to_snowflake(
-                    silver_control_table_spec_df, f"{database}.{table}", "overwrite"
+                    silver_control_table_spec_df, f"{database}.{schema}.{table}", "overwrite"
                 )
             else:
                 self.__write_dataframe_to_snowflake(
-                    silver_control_table_spec_df, f"{database}.{table}", "overwrite"
+                    silver_control_table_spec_df, f"{database}.{schema}.{table}", "overwrite"
                 )
         else:
             if self.horizon_enabled:
                 original_control_table_df = self.__read_table_from_snowflake(
-                    f"{database}.{table}"
+                    f"{database}.{schema}.{table}"
                 )
             else:
                 self.__register_table_in_metastore(
-                    database, dict_obj.get("schema", "PUBLIC"), table, dict_obj["silver_control_table_path"]
+                    database, schema, table, dict_obj["silver_control_table_path"]
                 )
                 original_control_table_df = self.__read_table_from_snowflake(
-                    f"{database}.{table}"
+                    f"{database}.{schema}.{table}"
                 )
             logger.info("In Merge block for Silver")
             self.__merge_dataframes(
                 silver_control_table_spec_df,
-                f"{database}.{table}",
+                f"{database}.{schema}.{table}",
                 ["dataFlowId"],
                 original_control_table_df.columns,
             )
@@ -334,33 +335,34 @@ class OnboardControlTable:
         bronze_fields = [field.name for field in dataclasses.fields(BronzeControlTableSpec)]
         bronze_control_table_spec_df = bronze_control_table_spec_df[bronze_fields]
         database = dict_obj["database"]
+        schema = dict_obj["schema"]
         table = dict_obj["bronze_control_table"]
         if dict_obj["overwrite"] == "True":
             if self.horizon_enabled:
                 self.__write_dataframe_to_snowflake(
-                    bronze_control_table_spec_df, f"{database}.{table}", "overwrite"
+                    bronze_control_table_spec_df, f"{database}.{schema}.{table}", "overwrite"
                 )
             else:
                 self.__write_dataframe_to_snowflake(
-                    bronze_control_table_spec_df, f"{database}.{table}", "overwrite"
+                    bronze_control_table_spec_df, f"{database}.{schema}.{table}", "overwrite"
                 )
         else:
             if self.horizon_enabled:
                 original_control_table_df = self.__read_table_from_snowflake(
-                    f"{database}.{table}"
+                    f"{database}.{schema}.{table}"
                 )
             else:
                 self.__register_table_in_metastore(
-                    database, dict_obj.get("schema", "PUBLIC"), table, dict_obj["bronze_control_table_path"]
+                    database, schema, table, dict_obj["bronze_control_table_path"]
                 )
                 original_control_table_df = self.__read_table_from_snowflake(
-                    f"{database}.{table}"
+                    f"{database}.{schema}.{table}"
                 )
 
             logger.info("In Merge block for Bronze")
             self.__merge_dataframes(
                 bronze_control_table_spec_df,
-                f"{database}.{table}",
+                f"{database}.{schema}.{table}",
                 ["dataFlowId"],
                 original_control_table_df.columns,
             )
@@ -887,7 +889,7 @@ class OnboardControlTable:
             
             if mode == "overwrite":
                 # Drop and recreate table
-                self.session.drop_table_if_exists(full_table_name)
+                self.session.sql(f"DROP TABLE IF EXISTS {full_table_name}").collect()
             
             # Convert pandas DataFrame to Snowpark DataFrame and write to table
             snowpark_df = self.session.create_dataframe(df)
