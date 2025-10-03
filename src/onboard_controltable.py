@@ -830,21 +830,26 @@ class OnboardControlTable:
             select_exp = []
             where_clause = []
             silver_transformation_json = onboarding_row[f"silver_transformation_json_{env}"]
-            if silver_transformation_json:
-                # Parse the JSON if it's a string
-                if isinstance(silver_transformation_json, str):
-                    silver_transformation_data = json.loads(silver_transformation_json)
-                else:
-                    silver_transformation_data = silver_transformation_json
-                
-                # Extract selectExp and whereClause from the transformation data
-                if isinstance(silver_transformation_data, list) and len(silver_transformation_data) > 0:
-                    transformation = silver_transformation_data[0]  # Take the first transformation
-                    select_exp = transformation.get("select_exp", [])
-                    where_clause = transformation.get("where_clause", [])
-                elif isinstance(silver_transformation_data, dict):
-                    select_exp = silver_transformation_data.get("select_exp", [])
-                    where_clause = silver_transformation_data.get("where_clause", [])
+            if silver_transformation_json and str(silver_transformation_json).strip():
+                try:
+                    # Parse the JSON if it's a string
+                    if isinstance(silver_transformation_json, str):
+                        silver_transformation_data = json.loads(silver_transformation_json)
+                    else:
+                        silver_transformation_data = silver_transformation_json
+                    
+                    # Extract selectExp and whereClause from the transformation data
+                    if isinstance(silver_transformation_data, list) and len(silver_transformation_data) > 0:
+                        transformation = silver_transformation_data[0]  # Take the first transformation
+                        select_exp = transformation.get("select_exp", [])
+                        where_clause = transformation.get("where_clause", [])
+                    elif isinstance(silver_transformation_data, dict):
+                        select_exp = silver_transformation_data.get("select_exp", [])
+                        where_clause = silver_transformation_data.get("where_clause", [])
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse silver transformation JSON: {e}. Using empty selectExp and whereClause.")
+                    select_exp = []
+                    where_clause = []
             
             silver_row = {
                 "dataFlowId": silver_data_flow_spec_id,

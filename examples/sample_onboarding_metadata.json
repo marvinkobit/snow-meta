@@ -38,6 +38,6 @@
          "sequence_by":"landing_timestamp",
          "scd_type":"1"
       },
-      "silver_transformation_json_dev":"@RAW.SNOWMETA_CONFIG.MYSTAGE/silvertransformations/sample_silver_transformations.json"
+      "silver_transformation_json_dev":"@RAW.SNOWMETA_CONFIG.MYSTAGE/silvertransformation/sample_silver_transformations.json"
    }
 ]
