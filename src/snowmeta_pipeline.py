@@ -14,3 +14,4 @@ from snowflake.snowpark.types import StructType, StructField, StringType, Varian
 
 
 class SnowmetaPipeline:
+    pass
