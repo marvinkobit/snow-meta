@@ -557,6 +557,7 @@ class OnboardControlTable:
             bronze_target_format = "snowflake"
             bronze_target_details = {
                 "database": onboarding_row[f"bronze_database_{env}"],
+                "schema": onboarding_row[f"bronze_schema"],
                 "table": onboarding_row["bronze_table"],
             }
             
@@ -726,11 +727,13 @@ class OnboardControlTable:
 
             bronze_target_details = {
                 "database": onboarding_row[f"bronze_database_{env}"],
+                "schema": onboarding_row[f"bronze_schema"],
                 "table": onboarding_row["bronze_table"],
             }
             
             silver_target_details = {
                 "database": onboarding_row[f"silver_database_{env}"],
+                "schema": onboarding_row[f"silver_schema"],
                 "table": onboarding_row["silver_table"],
             }
             
