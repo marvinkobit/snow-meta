@@ -12,7 +12,7 @@ from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col, lit, current_timestamp
 from snowflake.snowpark.types import StructType, StructField, StringType, VariantType, TimestampType
 
-from controltable_spec import BronzeControlTableSpec, SilverControlTableSpec, ControlTableSpecUtils
+from src.controltable_spec import BronzeControlTableSpec, SilverControlTableSpec, ControlTableSpecUtils
 
 logger = logging.getLogger("snowflake.labs.snowmeta")
 logger.setLevel(logging.INFO)
