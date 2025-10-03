@@ -56,11 +56,12 @@ def render_onboarding_tab():
         )
     
     with col3:
-        serverless_enabled = st.radio(
-            "Run onboarding with serverless?",
-            options=[True, False],
-            index=0,
-            help="Use Snowflake serverless compute for pipeline execution"
+        warehouse_name = st.selectbox(
+            "Run on warehouse:",
+            options=["COMPUTE_WH", "SNOWFLAKE_LEARNING_WH", "SNOW_COMPUTE", "TRANSFORMING"],
+            index=3,  # TRANSFORMING as default
+            help="Select Snowflake warehouse for pipeline execution",
+            key="onboarding_warehouse"
         )
     
     st.divider()
@@ -200,7 +201,7 @@ def render_onboarding_tab():
             onboarding_data = {
                 "horizon_enabled": horizon_enabled,
                 "database": database_name,
-                "serverless_enabled": serverless_enabled,
+                "warehouse": warehouse_name,
                 "onboarding_file_path": onboarding_file_path,
                 "onboarding_files_directory": onboarding_files_directory,
                 "meta_schema_name": meta_schema_name,
@@ -265,11 +266,12 @@ def render_deployment_tab():
         )
     
     with col3:
-        serverless_enabled = st.radio(
-            "Run deployment with serverless?",
-            options=[True, False],
-            index=0,
-            help="Use Snowflake serverless compute for pipeline execution"
+        warehouse_name = st.selectbox(
+            "Run on warehouse:",
+            options=["COMPUTE_WH", "SNOWFLAKE_LEARNING_WH", "SNOW_COMPUTE", "TRANSFORMING"],
+            index=3,  # TRANSFORMING as default
+            help="Select Snowflake warehouse for pipeline execution",
+            key="deployment_warehouse"
         )
     
     st.divider()
@@ -359,7 +361,7 @@ def render_deployment_tab():
             deployment_data = {
                 "horizon_enabled": horizon_enabled,
                 "database": database_name,
-                "serverless_enabled": serverless_enabled,
+                "warehouse": warehouse_name,
                 "dataflow_schema_name": dataflow_schema_name,
                 "target_schema_name": target_schema_name,
                 "bronze_group_name": bronze_group_name,
