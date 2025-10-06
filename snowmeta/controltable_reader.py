@@ -2,10 +2,9 @@
 
 import logging
 from typing import List
-
 from snowflake.snowpark import Session
 
-from src.controltable_spec import BronzeControlTableSpec, SilverControlTableSpec, ControlTableSpecUtils
+from snowmeta.controltable_spec import BronzeControlTableSpec, SilverControlTableSpec, ControlTableSpecUtils
 
 logger = logging.getLogger("snowflake.labs.snowmeta")
 logger.setLevel(logging.INFO)
