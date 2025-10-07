@@ -1,6 +1,5 @@
 {% set name = "snowmeta" %}
 {% set version = "0.1.0" %}
-{% set python_min = "3.9" %}
 
 package:
   name: {{ name|lower }}
@@ -32,8 +31,9 @@ test:
   commands:
     - pip check
   requires:
-    - pip
     - python {{ python_min }}
+    - pip
+    
 
 about:
   home: https://github.com/marvinkobit/snow-meta
