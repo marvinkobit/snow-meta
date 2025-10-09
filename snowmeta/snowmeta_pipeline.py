@@ -63,7 +63,9 @@ class SnowmetaPipeline:
     FROM TABLE(
       INFER_SCHEMA(
         LOCATION => '{source_path}',
-        FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT_INFER'
+        FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT_INFER',
+        IGNORE_CASE => TRUE
+        
       )
     )
   );
@@ -424,8 +426,8 @@ AS
 $$
 DECLARE
     columns_list VARCHAR;
+    select_columns_list VARCHAR; -- NEW: For the SELECT list with 'source.' prefixes
     update_conditions VARCHAR;
-    insert_select VARCHAR;
 BEGIN
     -- Create temporary deduped source table
     CREATE OR REPLACE TEMP TABLE {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS
@@ -445,12 +447,21 @@ BEGIN
         CAST(CURRENT_TIMESTAMP() AS TIMESTAMP_NTZ) AS VALID_FROM,
         CAST(NULL AS TIMESTAMP_NTZ) AS VALID_TO,
         TRUE AS IS_CURRENT
-    FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} 
+    FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table}
     WHERE 1=0;
 
-    -- Get column list dynamically (excluding metadata columns and SCD2 columns)
-    SELECT LISTAGG(COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+    -- Get column list dynamically for the INSERT INTO target list (unprefixed)
+    SELECT LISTAGG('"' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
     INTO :columns_list
+    FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = '{silver_schema}'
+      AND TABLE_NAME = '{silver_table.upper()}'
+      AND COLUMN_NAME NOT IN ('VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN'{', ' + ', '.join([f"'{col.upper()}'" for col in except_columns]) if except_columns else ''})
+    ;
+
+    -- NEW: Get column list dynamically for the SELECT statement (prefixed with 'source.')
+    SELECT LISTAGG('source."' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+    INTO :select_columns_list
     FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = '{silver_schema}'
       AND TABLE_NAME = '{silver_table.upper()}'
@@ -463,7 +474,7 @@ BEGIN
     FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = '{silver_schema}'
       AND TABLE_NAME = '{silver_table.upper()}'
-      AND COLUMN_NAME NOT IN ({key_column_quoted}, 'VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN'{', ' + ', '.join([f"'{col.upper()}'" for col in except_columns]) if except_columns else ''})
+      AND COLUMN_NAME NOT IN ('{key_column.upper()}', 'VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN'{', ' + ', '.join([f"'{col.upper()}'" for col in except_columns]) if except_columns else ''})
     ;
 
     -- Expire existing records where changes are detected
@@ -480,7 +491,7 @@ BEGIN
     -- Insert new and changed records
     EXECUTE IMMEDIATE '
     INSERT INTO {silver_database}.{silver_schema}.{silver_table} (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT)
-    SELECT ' || :columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE
+    SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE -- Use the correctly prefixed list here
     FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
     LEFT JOIN {silver_database}.{silver_schema}.{silver_table} AS target
         ON source.{key_column_quoted} = target.{key_column_quoted} AND target.IS_CURRENT = TRUE
@@ -520,11 +531,11 @@ $$;
         after_clause = f"AFTER {after_task}" if after_task else ""
         
         sql_task = f"""
-CREATE OR REPLACE TASK {silver_database}.{silver_schema}.{task_name}
+CREATE OR REPLACE TASK {bronze_database}.{bronze_schema}.{task_name}
   WAREHOUSE = {warehouse_name}
   {after_clause}
 AS
-  CALL {silver_database}.{silver_schema}.{procedure_name}();
+  CALL {bronze_database}.{bronze_schema}.{procedure_name}();
 """
         return sql_task
     
