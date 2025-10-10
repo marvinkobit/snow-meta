@@ -535,7 +535,7 @@ CREATE OR REPLACE TASK {bronze_database}.{bronze_schema}.{task_name}
   WAREHOUSE = {warehouse_name}
   {after_clause}
 AS
-  CALL {bronze_database}.{bronze_schema}.{procedure_name}();
+  CALL {silver_database}.{silver_schema}.{procedure_name}();
 """
         return sql_task
     
@@ -561,21 +561,23 @@ AS
                 after_task = bronze_task_name
             elif idx > 0:
                 prev_config = pipeline_silver_data[idx - 1]
-                prev_silver_database = prev_config["silver_database_dev"]
-                prev_silver_schema = prev_config["silver_schema"]
+                prev_bronze_database = prev_config["bronze_database_dev"]
+                prev_bronze_schema = prev_config["bronze_schema"]
                 prev_silver_table = prev_config["silver_table"]
-                after_task = f"{prev_silver_database}.{prev_silver_schema}.TASK_SCD2_{prev_silver_table.upper()}"
+                after_task = f"{prev_bronze_database}.{prev_bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
             else:
                 after_task = None
             
             procedure_sql = self.create_scd2_stored_procedure(silver_config)
             task_sql = self.create_scd2_task(silver_config, warehouse_name, after_task)
             
+            bronze_database = silver_config["bronze_database_dev"]
+            bronze_schema = silver_config["bronze_schema"]
             silver_database = silver_config["silver_database_dev"]
             silver_schema = silver_config["silver_schema"]
             silver_table = silver_config["silver_table"]
             procedure_name = f"{silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}"
-            task_name = f"{silver_database}.{silver_schema}.TASK_SCD2_{silver_table.upper()}"
+            task_name = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{silver_table.upper()}"
             
             scripts.append({
                 'procedure': procedure_sql,
@@ -643,6 +645,8 @@ AS
         for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
             scd_type = cdc_config["scd_type"]
+            bronze_database = silver_config["bronze_database_dev"]
+            bronze_schema = silver_config["bronze_schema"]
             silver_database = silver_config["silver_database_dev"]
             silver_schema = silver_config["silver_schema"]
             silver_table = silver_config["silver_table"]
@@ -673,10 +677,10 @@ AS
                 after_task = bronze_task_name
             elif pipeline_index > 1:
                 prev_config = pipeline_silver_data[pipeline_index - 2]
-                prev_silver_database = prev_config["silver_database_dev"]
-                prev_silver_schema = prev_config["silver_schema"]
+                prev_bronze_database = prev_config["bronze_database_dev"]
+                prev_bronze_schema = prev_config["bronze_schema"]
                 prev_silver_table = prev_config["silver_table"]
-                after_task = f"{prev_silver_database}.{prev_silver_schema}.TASK_SCD2_{prev_silver_table.upper()}"
+                after_task = f"{prev_bronze_database}.{prev_bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
             else:
                 after_task = None
             
@@ -686,7 +690,7 @@ AS
             try:
                 self.logger.info(f"Creating SCD2 task for {fully_qualified_silver_table}")
                 self.session.sql(task_sql).collect()
-                task_name = f"{silver_database}.{silver_schema}.TASK_SCD2_{silver_table.upper()}"
+                task_name = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{silver_table.upper()}"
                 self.logger.info(f"Successfully created SCD2 task: {task_name}")
             except Exception as e:
                 self.logger.error(f"Failed to create SCD2 task: {e}")
@@ -694,7 +698,7 @@ AS
             
             # Execute task if requested
             if execute_tasks:
-                task_name = f"{silver_database}.{silver_schema}.TASK_SCD2_{silver_table.upper()}"
+                task_name = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{silver_table.upper()}"
                 try:
                     self.logger.info(f"Executing SCD2 task {task_name}")
                     result = self.session.sql(f"EXECUTE TASK {task_name}").collect()
