@@ -110,18 +110,31 @@ class ControlTableReader:
             # Read the JSON file from the stage
             logger.info(f"Reading schema from stage: {stage_path}")
             
-            # Use Snowpark to read the file from the stage
-            df = self.session.sql(f"SELECT $1 as content FROM {stage_path}")
+            # Use Snowpark DataFrame to read JSON from stage
+            df = self.session.read.json(stage_path)
+            
+            # Collect the data
             result = df.collect()
             
             if not result:
                 raise ValueError(f"No content found in stage file: {stage_path}")
             
-            # Get the JSON content from the first row
-            json_content = result[0]['CONTENT']
+            # Convert the first row to dictionary
+            row_dict = result[0].asDict()
             
-            # Parse the JSON content
-            schema_dict = json.loads(json_content)
+            # The keys might be uppercase (TYPE, FIELDS), so normalize them
+            schema_dict = {}
+            for key, value in row_dict.items():
+                lower_key = key.lower()
+                
+                # If the value is a string representation of JSON, parse it
+                if isinstance(value, str) and (value.startswith('[') or value.startswith('{')):
+                    try:
+                        schema_dict[lower_key] = json.loads(value)
+                    except:
+                        schema_dict[lower_key] = value
+                else:
+                    schema_dict[lower_key] = value
             
             logger.info(f"Successfully read schema with {len(schema_dict.get('fields', []))} fields")
             return schema_dict

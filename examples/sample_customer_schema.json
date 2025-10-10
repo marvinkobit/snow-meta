@@ -1,17 +1,17 @@
 {
     "type": "struct",
     "fields": [
-      { "name": "ACCTBAL", "type": "FLOAT", "nullable": true, "metadata": {} },
-      { "name": "ADDRESS", "type": "VARCHAR", "nullable": true, "metadata": {} },
-      { "name": "COMMENT", "type": "VARCHAR", "nullable": true, "metadata": {} },
-      { "name": "CUSTOMER_ID", "type": "NUMBER", "nullable": true, "metadata": {} },
-      { "name": "LOAD_TIMESTAMP", "type": "NUMBER", "nullable": true, "metadata": {} },
-      { "name": "MKTSEGMENT", "type": "VARCHAR", "nullable": true, "metadata": {} },
-      { "name": "NAME", "type": "VARCHAR", "nullable": true, "metadata": {} },
-      { "name": "NATIONKEY", "type": "NUMBER", "nullable": true, "metadata": {} },
-      { "name": "PHONE", "type": "VARCHAR", "nullable": true, "metadata": {} },
-      { "name": "SRC_FILENAME", "type": "VARCHAR", "nullable": true, "metadata": {} },
-      { "name": "SRC_FILE_ROW_NUM", "type": "NUMBER", "nullable": true, "metadata": {} }
+      { "name": "ACCTBAL", "type": "FLOAT", "nullable": true },
+      { "name": "ADDRESS", "type": "VARCHAR", "nullable": true },
+      { "name": "COMMENT", "type": "VARCHAR", "nullable": true },
+      { "name": "CUSTOMER_ID", "type": "NUMBER", "nullable": true },
+      { "name": "LOAD_TIMESTAMP", "type": "NUMBER", "nullable": true },
+      { "name": "MKTSEGMENT", "type": "VARCHAR", "nullable": true },
+      { "name": "NAME", "type": "VARCHAR", "nullable": true },
+      { "name": "NATIONKEY", "type": "NUMBER", "nullable": true },
+      { "name": "PHONE", "type": "VARCHAR", "nullable": true },
+      { "name": "SRC_FILENAME", "type": "VARCHAR", "nullable": true},
+      { "name": "SRC_FILE_ROW_NUM", "type": "NUMBER", "nullable": true }
     ]
 }
   
