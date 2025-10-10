@@ -1,5 +1,4 @@
 {
-    "type": "struct",
     "fields": [
       { "name": "ACCTBAL", "type": "FLOAT", "nullable": true },
       { "name": "ADDRESS", "type": "VARCHAR", "nullable": true },

@@ -137,7 +137,7 @@ class ControlTableReader:
                     schema_dict[lower_key] = value
             
             logger.info(f"Successfully read schema with {len(schema_dict.get('fields', []))} fields")
-            return schema_dict
+            return schema_dict["$1"]
             
         except Exception as e:
             logger.error(f"Failed to read schema from {stage_path}: {e}")
