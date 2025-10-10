@@ -63,13 +63,13 @@ class SnowmetaPipeline:
     FROM TABLE(
       INFER_SCHEMA(
         LOCATION => '{source_path}',
-        FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT_INFER',
+        FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT',
         IGNORE_CASE => TRUE
         
       )
     )
   );
-  
+
   ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN
   SRC_FILENAME VARCHAR,
   SRC_FILE_ROW_NUMBER NUMBER;
