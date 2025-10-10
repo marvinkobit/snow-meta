@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col, lit, current_timestamp
 from snowflake.snowpark.types import StructType, StructField, StringType, VariantType, TimestampType
-
+from snowmeta.controltable_reader import ControlTableReader
 
 
 class SnowmetaPipeline:
@@ -24,6 +24,7 @@ class SnowmetaPipeline:
         """
         self.session = session
         self.logger = logging.getLogger(__name__)
+        self.controltable_reader = ControlTableReader(session)
     
     def create_unified_bronze_stored_procedure(self, pipeline_data: List[Dict[str, str]]) -> str:
         """
@@ -53,53 +54,63 @@ class SnowmetaPipeline:
             source_path = pipeline_config["source_path_dev"]
             file_format = pipeline_config["reader_format"]
             bronze_table = pipeline_config["bronze_table"]
+            byos_schema_location = pipeline_config.get("byos_schema")
             
+            if byos_schema_location:
+
+                schema_dict = self.controltable_reader.bringyourownschema(byos_schema_location)
+                create_table_sql = self.controltable_reader.generate_create_table_from_schema(schema_dict, f"{bronze_database}.{bronze_schema}.{bronze_table}")
+                # Use custom schema from JSON file
+                procedure_body += f""" {create_table_sql} """
+
+            else:
+                procedure_body += f"""
+                    -- Processing {bronze_table}
+                    -- Create table from inferred schema if it doesn't exist
+                    CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table}
+                    USING TEMPLATE (
+                        SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+                        FROM TABLE(
+                        INFER_SCHEMA(
+                            LOCATION => '{source_path}',
+                            FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT',
+                            IGNORE_CASE => TRUE
+                            
+                        )
+                        )
+                    );
+
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN
+                    SRC_FILENAME VARCHAR,
+                    SRC_FILE_ROW_NUMBER NUMBER;
+                    """
             procedure_body += f"""
-  -- Processing {bronze_table}
-  -- Create table from inferred schema if it doesn't exist
-  CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table}
-  USING TEMPLATE (
-    SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
-    FROM TABLE(
-      INFER_SCHEMA(
-        LOCATION => '{source_path}',
-        FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT',
-        IGNORE_CASE => TRUE
-        
-      )
-    )
-  );
+            -- Copy data into table
+            COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                FROM '{source_path}'
+                FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                PATTERN = '.*\\.{file_format.lower()}'
+                MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+                INCLUDE_METADATA = (
+                SRC_FILENAME=METADATA$FILENAME,
+                SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+                );
 
-  ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN
-  SRC_FILENAME VARCHAR,
-  SRC_FILE_ROW_NUMBER NUMBER;
-
-  -- Copy data into table
-  COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
-    FROM '{source_path}'
-    FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
-    PATTERN = '.*\\.{file_format.lower()}'
-    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
-    INCLUDE_METADATA = (
-    SRC_FILENAME=METADATA$FILENAME,
-    SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
-    );
-
-"""
+            """
         
         sql_procedure = f"""
-CREATE OR REPLACE PROCEDURE {bronze_database}.{bronze_schema}.{procedure_name}()
-RETURNS STRING
-LANGUAGE SQL
-EXECUTE AS OWNER
-AS
-$$
-BEGIN
-{procedure_body}
-  RETURN 'SUCCESS';
-END;
-$$;
-"""
+            CREATE OR REPLACE PROCEDURE {bronze_database}.{bronze_schema}.{procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            BEGIN
+            {procedure_body}
+            RETURN 'SUCCESS';
+            END;
+            $$;
+            """
         return sql_procedure
     
     def create_unified_bronze_task(self, pipeline_data: List[Dict[str, str]], warehouse_name: str = "COMPUTE_WH") -> str:
