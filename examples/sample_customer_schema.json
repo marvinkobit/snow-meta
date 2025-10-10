@@ -4,13 +4,11 @@
       { "name": "ADDRESS", "type": "VARCHAR", "nullable": true },
       { "name": "COMMENT", "type": "VARCHAR", "nullable": true },
       { "name": "CUSTOMER_ID", "type": "NUMBER", "nullable": true },
-      { "name": "LOAD_TIMESTAMP", "type": "NUMBER", "nullable": true },
+      { "name": "LOAD_TIMESTAMP", "type": "TIMESTAMP_NTZ", "nullable": true },
       { "name": "MKTSEGMENT", "type": "VARCHAR", "nullable": true },
       { "name": "NAME", "type": "VARCHAR", "nullable": true },
       { "name": "NATIONKEY", "type": "NUMBER", "nullable": true },
-      { "name": "PHONE", "type": "VARCHAR", "nullable": true },
-      { "name": "SRC_FILENAME", "type": "VARCHAR", "nullable": true},
-      { "name": "SRC_FILE_ROW_NUM", "type": "NUMBER", "nullable": true }
+      { "name": "PHONE", "type": "VARCHAR", "nullable": true }
     ]
 }
   
