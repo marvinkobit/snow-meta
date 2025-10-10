@@ -645,8 +645,8 @@ AS
         """
         
         # Get bronze database and schema from pipeline_bronze_data
-        bronze_database = pipeline_bronze_data[0]["bronze_database_dev"]
-        bronze_schema = pipeline_bronze_data[0]["bronze_schema"]
+        bronze_database = pipeline_silver_data[0]["bronze_database_dev"]
+        bronze_schema = pipeline_silver_data[0]["bronze_schema"]
         
         for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
