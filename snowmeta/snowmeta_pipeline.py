@@ -69,13 +69,21 @@ class SnowmetaPipeline:
       )
     )
   );
+  
+  ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN
+  SRC_FILENAME VARCHAR,
+  SRC_FILE_ROW_NUMBER NUMBER;
 
   -- Copy data into table
   COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
     FROM '{source_path}'
     FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
     PATTERN = '.*\\.{file_format.lower()}'
-    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE;
+    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+    INCLUDE_METADATA = (
+    SRC_FILENAME=METADATA$FILENAME,
+    SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+    );
 
 """
         
