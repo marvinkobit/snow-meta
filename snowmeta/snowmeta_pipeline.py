@@ -384,41 +384,38 @@ AS
         
         self.logger.info(f"Silver pipeline execution completed. Processed {len(pipeline_silver_data)} dynamic table(s).")
     
-    def create_scd2_stored_procedure(self, silver_config: Dict[str, Any]) -> str:
-        """
-        Generate SQL for creating a stored procedure for SCD Type 2 silver table.
-        
-        Args:
-            silver_config: Dictionary containing silver pipeline configuration
-            
-        Returns:
-            SQL string for creating the stored procedure
-        """
-        bronze_database = silver_config["bronze_database_dev"]
-        bronze_schema = silver_config["bronze_schema"]
-        bronze_table = silver_config["bronze_table"]
-        silver_database = silver_config["silver_database_dev"]
-        silver_schema = silver_config["silver_schema"]
-        silver_table = silver_config["silver_table"]
-        cdc_config = silver_config["silver_cdc_apply_changes"]
-        
-        key_columns = cdc_config["keys"]
-        sequence_by_column = cdc_config["sequence_by"]
-        except_columns = cdc_config.get("except_column_list", [])
-        
-        # Quote identifiers
-        key_column = key_columns[0]  # Use first key for simplicity
-        key_column_quoted = f'"{key_column}"'
-        sequence_by_quoted = f'"{sequence_by_column}"'
-        
-        # Build procedure name
-        procedure_name = f"SP_UPSERT_SCD2_{silver_table.upper()}"
-        
-        # Get all columns from bronze table (will be dynamically fetched)
-        # For now, we'll create a generic procedure that works with any table
-        
-        sql_procedure = f"""
-CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
+def create_scd2_stored_procedure(self, silver_config: Dict[str, Any]) -> str:
+    """
+    Generate SQL for creating a stored procedure for SCD Type 2 silver table.
+    """
+    bronze_database = silver_config["bronze_database_dev"]
+    bronze_schema = silver_config["bronze_schema"]
+    bronze_table = silver_config["bronze_table"]
+    silver_database = silver_config["silver_database_dev"]
+    silver_schema = silver_config["silver_schema"]
+    silver_table = silver_config["silver_table"]
+    cdc_config = silver_config["silver_cdc_apply_changes"]
+    
+    key_columns = cdc_config["keys"]
+    sequence_by_column = cdc_config["sequence_by"]
+    except_columns = cdc_config.get("except_column_list", [])
+    
+    # Quote identifiers
+    key_column = key_columns[0]
+    
+    # FIX: Ensure quoted identifiers are UPPERCASE to match Snowflake's default table storage
+    key_column_quoted = f'"{key_column.upper()}"'
+    sequence_by_quoted = f'"{sequence_by_column.upper()}"'
+    
+    # Build procedure name
+    procedure_name = f"SP_UPSERT_SCD2_{silver_table.upper()}"
+    
+    # Prepare list of excluded columns for dynamic SQL generation
+    excluded_cols_list = except_columns + ['VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN']
+    excluded_cols_sql = ', '.join([f"'{col.upper()}'" for col in excluded_cols_list])
+
+    sql_procedure = f"""
+CREATE OR REPLACE PROCEDURE {bronze_database}.{bronze_schema}.{procedure_name}()
 RETURNS VARCHAR
 LANGUAGE SQL
 EXECUTE AS OWNER
@@ -426,7 +423,7 @@ AS
 $$
 DECLARE
     columns_list VARCHAR;
-    select_columns_list VARCHAR; -- NEW: For the SELECT list with 'source.' prefixes
+    select_columns_list VARCHAR;
     update_conditions VARCHAR;
 BEGIN
     -- Create temporary deduped source table
@@ -434,7 +431,7 @@ BEGIN
     SELECT *
     FROM (
         SELECT *,
-               ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
+                ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
         FROM {bronze_database}.{bronze_schema}.{bronze_table}
     )
     WHERE rn = 1;
@@ -454,27 +451,27 @@ BEGIN
     SELECT LISTAGG('"' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
     INTO :columns_list
     FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = '{silver_schema}'
+    WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
       AND TABLE_NAME = '{silver_table.upper()}'
-      AND COLUMN_NAME NOT IN ('VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN'{', ' + ', '.join([f"'{col.upper()}'" for col in except_columns]) if except_columns else ''})
+      AND COLUMN_NAME NOT IN ({excluded_cols_sql})
     ;
 
-    -- NEW: Get column list dynamically for the SELECT statement (prefixed with 'source.')
+    -- Get column list dynamically for the SELECT statement (prefixed with 'source.')
     SELECT LISTAGG('source."' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
     INTO :select_columns_list
     FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = '{silver_schema}'
+    WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
       AND TABLE_NAME = '{silver_table.upper()}'
-      AND COLUMN_NAME NOT IN ('VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN'{', ' + ', '.join([f"'{col.upper()}'" for col in except_columns]) if except_columns else ''})
+      AND COLUMN_NAME NOT IN ({excluded_cols_sql})
     ;
 
-    -- Build update conditions for detecting changes
+    -- Build update conditions for detecting changes (Exclude Key, SCD2 fields, and excluded cols)
     SELECT LISTAGG('target."' || COLUMN_NAME || '" IS DISTINCT FROM source."' || COLUMN_NAME || '"', ' OR ')
     INTO :update_conditions
     FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = '{silver_schema}'
+    WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
       AND TABLE_NAME = '{silver_table.upper()}'
-      AND COLUMN_NAME NOT IN ('{key_column.upper()}', 'VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN'{', ' + ', '.join([f"'{col.upper()}'" for col in except_columns]) if except_columns else ''})
+      AND COLUMN_NAME NOT IN ('{key_column.upper()}', {excluded_cols_sql})
     ;
 
     -- Expire existing records where changes are detected
@@ -491,7 +488,7 @@ BEGIN
     -- Insert new and changed records
     EXECUTE IMMEDIATE '
     INSERT INTO {silver_database}.{silver_schema}.{silver_table} (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT)
-    SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE -- Use the correctly prefixed list here
+    SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE
     FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
     LEFT JOIN {silver_database}.{silver_schema}.{silver_table} AS target
         ON source.{key_column_quoted} = target.{key_column_quoted} AND target.IS_CURRENT = TRUE
@@ -500,27 +497,27 @@ BEGIN
         OR (' || :update_conditions || ')
     ';
 
-    RETURN 'SCD2 upsert complete for {silver_table}';
+    RETURN 'SCD2 upsert complete for {silver_table.upper()}';
 END;
 $$;
 """
-        return sql_procedure
+    return sql_procedure
     
-    def create_scd2_task(self, silver_config: Dict[str, Any], warehouse_name: str = "COMPUTE_WH", 
-                         after_task: Optional[str] = None) -> str:
+    def create_scd2_task(self, silver_config: Dict[str, Any], bronze_database: str, bronze_schema: str, 
+                         warehouse_name: str = "COMPUTE_WH", after_task: Optional[str] = None) -> str:
         """
         Generate SQL for creating a task for SCD Type 2 stored procedure.
         
         Args:
             silver_config: Dictionary containing silver pipeline configuration
+            bronze_database: Bronze database name for task creation
+            bronze_schema: Bronze schema name for task creation
             warehouse_name: Warehouse to use for the task
             after_task: Optional predecessor task name
             
         Returns:
             SQL string for creating the task
         """
-        bronze_database = silver_config["bronze_database_dev"]
-        bronze_schema = silver_config["bronze_schema"]
         silver_database = silver_config["silver_database_dev"]
         silver_schema = silver_config["silver_schema"]
         silver_table = silver_config["silver_table"]
@@ -540,6 +537,7 @@ AS
         return sql_task
     
     def generate_scd2_sql_scripts(self, pipeline_silver_data: List[Dict[str, Any]], 
+                                   pipeline_bronze_data: List[Dict[str, str]],
                                    warehouse_name: str = "COMPUTE_WH",
                                    bronze_task_name: Optional[str] = None) -> List[Dict[str, str]]:
         """
@@ -547,12 +545,17 @@ AS
         
         Args:
             pipeline_silver_data: List of dictionaries containing silver pipeline configuration
+            pipeline_bronze_data: List of dictionaries containing bronze pipeline configuration
             warehouse_name: Warehouse to use for tasks
             bronze_task_name: Optional bronze task to chain after (e.g., "ANALYTICS.FINANCIAL_BRONZE.INGEST_ALL_BRONZE")
             
         Returns:
             List of dictionaries with 'procedure', 'task', 'procedure_name', 'task_name', and 'execute_task' keys
         """
+        # Get bronze database and schema from pipeline_bronze_data
+        bronze_database = pipeline_bronze_data[0]["bronze_database_dev"]
+        bronze_schema = pipeline_bronze_data[0]["bronze_schema"]
+        
         scripts = []
         
         for idx, silver_config in enumerate(pipeline_silver_data):
@@ -561,18 +564,14 @@ AS
                 after_task = bronze_task_name
             elif idx > 0:
                 prev_config = pipeline_silver_data[idx - 1]
-                prev_bronze_database = prev_config["bronze_database_dev"]
-                prev_bronze_schema = prev_config["bronze_schema"]
                 prev_silver_table = prev_config["silver_table"]
-                after_task = f"{prev_bronze_database}.{prev_bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
+                after_task = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
             else:
                 after_task = None
             
             procedure_sql = self.create_scd2_stored_procedure(silver_config)
-            task_sql = self.create_scd2_task(silver_config, warehouse_name, after_task)
+            task_sql = self.create_scd2_task(silver_config, bronze_database, bronze_schema, warehouse_name, after_task)
             
-            bronze_database = silver_config["bronze_database_dev"]
-            bronze_schema = silver_config["bronze_schema"]
             silver_database = silver_config["silver_database_dev"]
             silver_schema = silver_config["silver_schema"]
             silver_table = silver_config["silver_table"]
@@ -591,6 +590,7 @@ AS
         return scripts
     
     def invoke_silver_scd2_pipeline(self, pipeline_silver_data: List[Dict[str, Any]], 
+                                     pipeline_bronze_data: List[Dict[str, str]],
                                      warehouse_name: str = "COMPUTE_WH",
                                      bronze_task_name: Optional[str] = None,
                                      execute_tasks: bool = True) -> None:
@@ -611,6 +611,8 @@ AS
                                    - sequence_by: Column to order by for getting latest record
                                    - scd_type: Must be "2" for this method
                                    - except_column_list: Optional list of columns to exclude
+            pipeline_bronze_data: List of dictionaries containing bronze pipeline configuration.
+                                 Used to get the bronze database and schema for task creation.
             warehouse_name: Warehouse to use for tasks (default: "COMPUTE_WH")
             bronze_task_name: Optional bronze task name to chain after
             execute_tasks: Whether to execute tasks immediately (default: True)
@@ -642,11 +644,13 @@ AS
             >>> pipeline.invoke_silver_scd2_pipeline(pipeline_silver_data)
         """
         
+        # Get bronze database and schema from pipeline_bronze_data
+        bronze_database = pipeline_bronze_data[0]["bronze_database_dev"]
+        bronze_schema = pipeline_bronze_data[0]["bronze_schema"]
+        
         for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
             scd_type = cdc_config["scd_type"]
-            bronze_database = silver_config["bronze_database_dev"]
-            bronze_schema = silver_config["bronze_schema"]
             silver_database = silver_config["silver_database_dev"]
             silver_schema = silver_config["silver_schema"]
             silver_table = silver_config["silver_table"]
@@ -677,15 +681,13 @@ AS
                 after_task = bronze_task_name
             elif pipeline_index > 1:
                 prev_config = pipeline_silver_data[pipeline_index - 2]
-                prev_bronze_database = prev_config["bronze_database_dev"]
-                prev_bronze_schema = prev_config["bronze_schema"]
                 prev_silver_table = prev_config["silver_table"]
-                after_task = f"{prev_bronze_database}.{prev_bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
+                after_task = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
             else:
                 after_task = None
             
             # Create task
-            task_sql = self.create_scd2_task(silver_config, warehouse_name, after_task)
+            task_sql = self.create_scd2_task(silver_config, bronze_database, bronze_schema, warehouse_name, after_task)
             
             try:
                 self.logger.info(f"Creating SCD2 task for {fully_qualified_silver_table}")
