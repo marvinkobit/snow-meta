@@ -139,6 +139,111 @@ Raw Stage Data → Bronze Layer → Silver Layer → Gold Layer
 - **Processing**: Aggregations, joins, business logic
 - **Output**: Analytics-ready datasets
 
+## 🏗️ Implementation Approach: Snowpark DataFrame API vs Snowpark SQL
+
+Snowmeta Pipeline uses a **hybrid approach** that leverages the strengths of both Snowpark DataFrame API and Snowpark SQL to deliver optimal performance, maintainability, and feature coverage.
+
+### Design Philosophy
+
+Our framework strategically chooses between DataFrame API and SQL based on the specific use case:
+
+#### Snowpark SQL (String-Based) ✅
+**Best for:**
+- **Bronze Layer Ingestion** - Full access to `COPY INTO`, `INFER_SCHEMA`, and file format options
+- **SCD Type 2 Logic** - Complex `MERGE` statements and window functions with `QUALIFY`
+- **Stored Procedures & Tasks** - Native Snowflake orchestration and scheduling
+- **Bulk Operations** - Maximum performance without Python overhead
+
+**Advantages:**
+- ✅ Complete feature access to all Snowflake capabilities
+- ✅ Native SQL execution with optimal performance
+- ✅ Easy to audit, review, and debug
+- ✅ Better integration with Snowflake's task orchestration
+- ✅ Familiar to most data engineers
+
+**Trade-offs:**
+- ⚠️ String concatenation can be error-prone
+- ⚠️ No compile-time type safety
+- ⚠️ Harder to unit test without database connection
+
+#### Snowpark DataFrame API ✅
+**Best for:**
+- **Metadata Operations** - Reading control tables and configuration
+- **Data Transformations** - Dynamic column mapping and type conversions
+- **Validation & Monitoring** - Row counts, profiling, quality checks
+- **Schema Operations** - Inspecting and manipulating table schemas
+
+**Advantages:**
+- ✅ Type safety with compile-time error checking
+- ✅ IDE support (auto-complete, IntelliSense)
+- ✅ Programmatic transformation building
+- ✅ Easier unit testing with mock DataFrames
+- ✅ Better for complex conditional logic
+
+**Trade-offs:**
+- ⚠️ Python overhead adds latency
+- ⚠️ Not all Snowflake features available
+- ⚠️ Generated SQL may be suboptimal for complex queries
+
+### Decision Matrix
+
+| Aspect | DataFrame API | SQL | **Current Choice** |
+|--------|---------------|-----|-------------------|
+| **Bronze Ingestion** | ❌ Limited (`COPY INTO` options) | ✅ Full feature set | ✅ **SQL** |
+| **Silver SCD Type 1** | ✅ Good (simple dedup) | ✅ Good (Dynamic Tables) | ✅ **SQL** (Dynamic Tables) |
+| **Silver SCD Type 2** | ❌ Complex MERGE logic | ✅ Native window functions | ✅ **SQL** |
+| **Metadata Reading** | ✅ Type-safe objects | ❌ Verbose string parsing | ✅ **DataFrame API** |
+| **Data Transformations** | ✅ Programmatic building | ❌ String concatenation | 🔄 **Hybrid** (could expand) |
+| **Testing** | ✅ Mock-friendly | ❌ Requires DB connection | ✅ **DataFrame API** |
+| **Performance** | ⚠️ Python overhead | ✅ Native execution | ✅ **SQL** |
+| **Maintainability** | ✅ Type-safe refactoring | ⚠️ Runtime errors only | 🔄 **Balanced** |
+
+### Implementation Examples
+
+#### ✅ Using SQL for Bronze (Current Approach)
+```python
+# Leverage full COPY INTO capabilities
+sql_procedure = f"""
+    CREATE TABLE IF NOT EXISTS {bronze_table}
+    USING TEMPLATE (
+        SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+        FROM TABLE(INFER_SCHEMA(LOCATION => '{source_path}', ...))
+    );
+    
+    COPY INTO {bronze_table} FROM '{source_path}'
+    FILE_FORMAT = (FORMAT_NAME = '{format}')
+    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE;
+"""
+```
+
+#### ✅ Using DataFrame API for Metadata (Current Approach)
+```python
+# Type-safe metadata operations
+df = self.session.table(self.bronze_control_table)
+rows = df.collect()
+bronze_specs = [BronzeControlTableSpec(**row.asDict()) for row in rows]
+```
+
+#### 🔄 Hybrid for Transformations (Enhancement Opportunity)
+```python
+# DataFrame API for validation
+df = self.session.table(bronze_table)
+row_count = df.count()
+self.logger.info(f"Loaded {row_count} rows")
+
+# SQL for bulk transformations
+self.session.sql(copy_sql).collect()
+```
+
+### Why This Matters
+
+The hybrid approach ensures:
+1. **Performance** - SQL for data-intensive operations
+2. **Maintainability** - DataFrame API for configuration and metadata
+3. **Feature Coverage** - No limitations from API gaps
+4. **Production Readiness** - Native Snowflake orchestration (Tasks, Procedures)
+
+This design makes Snowmeta Pipeline both **developer-friendly** and **production-grade**.
 
 ## 🗂️ Project Structure
 

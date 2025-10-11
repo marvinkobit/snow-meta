@@ -10,8 +10,8 @@
          "source_table":"users",
          "source_path_dev":"@RAW.SNOWMETA_CONFIG.S3_STAGE/etbanks/full/",
          "source_metadata":{
-            "include_autoloader_metadata_column":"true",
-            "autoloader_metadata_col_name":"source_metadata",
+            "include_metadata_column":"true",
+            "metadata_col_name":"source_metadata",
             "select_metadata_cols":{
                "input_file_name":"_metadata.file_name",
                "input_file_path":"_metadata.file_path",
