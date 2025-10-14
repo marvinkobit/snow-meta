@@ -80,7 +80,7 @@ class SnowmetaPipeline:
                         )
                     );
 
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN  IF NOT EXISTS
                     SRC_FILENAME VARCHAR,
                     SRC_FILE_ROW_NUMBER NUMBER;
                     """
