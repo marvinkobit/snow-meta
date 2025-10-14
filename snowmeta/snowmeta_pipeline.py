@@ -550,7 +550,7 @@ CREATE OR REPLACE TASK {bronze_database}.{bronze_schema}.{task_name}
   WAREHOUSE = {warehouse_name}
   {after_clause}
 AS
-  CALL {silver_database}.{silver_schema}.{procedure_name}();
+  CALL {bronze_database}.{bronze_schema}.{procedure_name}();
 """
         return sql_task
     
