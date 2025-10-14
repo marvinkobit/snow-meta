@@ -1,4 +1,3 @@
-
 import copy
 import dataclasses
 import json
@@ -80,9 +79,9 @@ class SnowmetaPipeline:
                         )
                     );
 
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN  IF NOT EXISTS
-                    SRC_FILENAME VARCHAR,
-                    SRC_FILE_ROW_NUMBER NUMBER;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN  
+                    IF NOT EXISTS SRC_FILENAME VARCHAR,
+                    IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER;
                     """
             procedure_body += f"""
             -- Copy data into table
