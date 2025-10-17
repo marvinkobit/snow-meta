@@ -680,20 +680,8 @@ AS
         silver_table_prime = pipeline_silver_data[0]["silver_table"]
 
         master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
-        master_silver_procedure = f"""
-            CREATE OR REPLACE PROCEDURE {silver_database_prime}.{silver_schema_prime}.{master_silver_procedure_name}()
-            RETURNS STRING
-            LANGUAGE SQL
-            EXECUTE AS OWNER
-            AS
-            $$
-            BEGIN
-            {master_procedure_body}
-            RETURN 'SUCCESS';
-            END;
-            $$;
-            """
-        
+        master_procedure_body = ""
+           
         for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
             scd_type = cdc_config["scd_type"]
@@ -761,7 +749,20 @@ AS
                 self.logger.error(f"Failed to create SCD2 stored procedure: {e}")
                 raise
 
-        
+        master_silver_procedure = f"""
+            CREATE OR REPLACE PROCEDURE {silver_database_prime}.{silver_schema_prime}.{master_silver_procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            BEGIN
+            {master_procedure_body}
+            RETURN 'SUCCESS';
+            END;
+            $$;
+            """
+
         self.session.sql(master_silver_procedure).collect()
         self.logger.info(f"Successfully created master silver procedure")
         # Create task
