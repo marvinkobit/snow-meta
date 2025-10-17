@@ -10,6 +10,7 @@ from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col, lit, current_timestamp
 from snowflake.snowpark.types import StructType, StructField, StringType, VariantType, TimestampType
 from snowmeta.controltable_reader import ControlTableReader
+from snowmeta.snowmeta_sql import SnowmetaSQL
 
 
 class SnowmetaPipeline:
@@ -402,13 +403,20 @@ AS
         
         self.logger.info(f"Silver pipeline execution completed. Processed {len(pipeline_silver_data)} dynamic table(s).")
     
-    def create_scd2_stored_procedure(self, silver_config: Dict[str, Any]) -> str:
+    def create_scd2_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None) -> str:    
         """
         Generate SQL for creating a stored procedure for SCD Type 2 silver table.
         """
         bronze_database = silver_config["bronze_database_dev"]
         bronze_schema = silver_config["bronze_schema"]
         bronze_table = silver_config["bronze_table"]
+
+        if flattened_view_name:
+            bronze_database = silver_config["silver_database_dev"]
+            bronze_schema = silver_config["silver_schema"]
+            bronze_table = flattened_view_name
+
+
         silver_database = silver_config["silver_database_dev"]
         silver_schema = silver_config["silver_schema"]
         silver_table = silver_config["silver_table"]
@@ -433,7 +441,7 @@ AS
         excluded_cols_sql = ', '.join([f"'{col.upper()}'" for col in excluded_cols_list])
 
         sql_procedure = f"""
-    CREATE OR REPLACE PROCEDURE {bronze_database}.{bronze_schema}.{procedure_name}()
+    CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
     RETURNS VARCHAR
     LANGUAGE SQL
     EXECUTE AS OWNER
@@ -521,7 +529,7 @@ AS
     """
         return sql_procedure
     
-    def create_scd2_task(self, silver_config: Dict[str, Any], bronze_database: str, bronze_schema: str, 
+    def create_master_silver_task(self, pipeline_silver_data: Dict[str, Any], bronze_database: str, bronze_schema: str, 
                          warehouse_name: str = "COMPUTE_WH", after_task: Optional[str] = None) -> str:
         """
         Generate SQL for creating a task for SCD Type 2 stored procedure.
@@ -536,23 +544,25 @@ AS
         Returns:
             SQL string for creating the task
         """
-        silver_database = silver_config["silver_database_dev"]
-        silver_schema = silver_config["silver_schema"]
-        silver_table = silver_config["silver_table"]
+        silver_database_prime = pipeline_silver_data[0]["silver_database_dev"]
+        silver_schema_prime = pipeline_silver_data[0]["silver_schema"]
+        silver_table_prime = pipeline_silver_data[0]["silver_table"]
+        bronze_database_prime = pipeline_silver_data[0]["bronze_database_dev"]
+        bronze_schema_prime = pipeline_silver_data[0]["bronze_schema"]
         
-        procedure_name = f"SP_UPSERT_SCD2_{silver_table.upper()}"
-        task_name = f"TASK_SCD2_{silver_table.upper()}"
+        master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
+        task_name = f"TASK_SILVER_SCD2_{silver_schema_prime.upper()}"
         
         after_clause = f"AFTER {after_task}" if after_task else ""
         
-        sql_task = f"""
-CREATE OR REPLACE TASK {bronze_database}.{bronze_schema}.{task_name}
-  WAREHOUSE = {warehouse_name}
-  {after_clause}
-AS
-  CALL {bronze_database}.{bronze_schema}.{procedure_name}();
-"""
-        return sql_task
+        master_sql_task = f"""
+                            CREATE OR REPLACE TASK {bronze_database_prime}.{bronze_schema_prime}.{task_name}
+                            WAREHOUSE = {warehouse_name}
+                            {after_clause}
+                            AS
+                            CALL {silver_database_prime}.{silver_schema_prime}.{master_silver_procedure_name}();
+                            """
+        return master_sql_task
     
     def generate_scd2_sql_scripts(self, pipeline_silver_data: List[Dict[str, Any]], 
                                    pipeline_bronze_data: List[Dict[str, str]],
@@ -663,8 +673,26 @@ AS
         """
         
         # Get bronze database and schema from pipeline_bronze_data
-        bronze_database = pipeline_silver_data[0]["bronze_database_dev"]
-        bronze_schema = pipeline_silver_data[0]["bronze_schema"]
+        bronze_database_prime = pipeline_silver_data[0]["bronze_database_dev"]
+        bronze_schema_prime = pipeline_silver_data[0]["bronze_schema"]
+        silver_database_prime = pipeline_silver_data[0]["silver_database_dev"]
+        silver_schema_prime = pipeline_silver_data[0]["silver_schema"]
+        silver_table_prime = pipeline_silver_data[0]["silver_table"]
+
+        master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
+        master_silver_procedure = f"""
+            CREATE OR REPLACE PROCEDURE {silver_database_prime}.{silver_schema_prime}.{master_silver_procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            BEGIN
+            {master_procedure_body}
+            RETURN 'SUCCESS';
+            END;
+            $$;
+            """
         
         for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
@@ -672,7 +700,49 @@ AS
             silver_database = silver_config["silver_database_dev"]
             silver_schema = silver_config["silver_schema"]
             silver_table = silver_config["silver_table"]
-            
+            bronze_database = silver_config["bronze_database_dev"]
+            bronze_schema = silver_config["bronze_schema"]
+            bronze_table = silver_config["bronze_table"]
+
+            silver_transformations = silver_config.get("silver_transformation_json")
+            if silver_transformations:
+                columns_to_flatten = silver_transformations["columns_to_flatten"]
+                sql_gen = SnowmetaSQL()
+                flattening_sql_gen = sql_gen.flatten_json(
+                    bronze_database=bronze_database,
+                    bronze_schema=bronze_schema,
+                    bronze_table=bronze_table,
+                    silver_database=silver_database,
+                    silver_schema=silver_schema,
+                    columns_to_flatten=columns_to_flatten
+                )
+                flattening_procedure_sql = flattening_sql_gen['sql']
+                flattening_procedure_name = flattening_sql_gen['procedure_name']
+                flattened_view_name = flattening_sql_gen['view_name']
+                self.session.sql(flattening_procedure_sql).collect()
+                self.logger.info(f"Successfully created flattening procedure: {flattening_procedure_name}")
+                master_procedure_body += f"""
+                
+                CALL {silver_database}.{silver_schema}.{flattening_procedure_name};
+                
+                """
+                self.logger.info(f"Successfully created flattening view: {flattened_view_name}")
+
+                procedure_sql = self.create_scd2_stored_procedure(silver_config, flattened_view_name)
+
+                master_procedure_body += f"""
+                
+                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}();
+                
+                """
+            else:
+                procedure_sql = self.create_scd2_stored_procedure(silver_config)
+                master_procedure_body += f"""
+                
+                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}();
+                
+                """
+            print(f"silver_config: {silver_config}")
             # Validate SCD type
             if scd_type != "2":
                 error_msg = f"Only SCD type 2 supported in this method; got {scd_type} for {silver_table}"
@@ -681,11 +751,8 @@ AS
             
             fully_qualified_silver_table = f"{silver_database}.{silver_schema}.{silver_table}"
             
-            self.logger.info(f"Processing SCD2 silver pipeline {pipeline_index}/{len(pipeline_silver_data)}: {fully_qualified_silver_table}")
-            
-            # Create stored procedure
-            procedure_sql = self.create_scd2_stored_procedure(silver_config)
-            
+            self.logger.info(f"Processing SCD2 silver pipeline {pipeline_index}/{len(pipeline_silver_data)}: {fully_qualified_silver_table}")                      
+            # Create stored procedure           
             try:
                 self.logger.info(f"Creating SCD2 stored procedure for {fully_qualified_silver_table}")
                 self.session.sql(procedure_sql).collect()
@@ -693,38 +760,31 @@ AS
             except Exception as e:
                 self.logger.error(f"Failed to create SCD2 stored procedure: {e}")
                 raise
-            
-            # Determine task dependency
-            if pipeline_index == 1 and bronze_task_name:
-                after_task = bronze_task_name
-            elif pipeline_index > 1:
-                prev_config = pipeline_silver_data[pipeline_index - 2]
-                prev_silver_table = prev_config["silver_table"]
-                after_task = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
-            else:
-                after_task = None
-            
-            # Create task
-            task_sql = self.create_scd2_task(silver_config, bronze_database, bronze_schema, warehouse_name, after_task)
-            
+
+        
+        self.session.sql(master_silver_procedure).collect()
+        self.logger.info(f"Successfully created master silver procedure")
+        # Create task
+        task_sql = self.create_master_silver_task(pipeline_silver_data, warehouse_name, after_task=None)
+        
+        try:
+            self.logger.info(f"Creating SCD2 task for Tables in  {silver_database_prime}.{silver_schema_prime}")
+            self.session.sql(task_sql).collect()
+            task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD2_{silver_schema_prime.upper()}"
+            self.logger.info(f"Successfully created SCD2 task: {task_name}")
+        except Exception as e:
+            self.logger.error(f"Failed to create SCD2 task: {e}")
+            raise
+        
+        # Execute task if requested
+        if execute_tasks:
+            task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD2_{silver_schema_prime.upper()}"
             try:
-                self.logger.info(f"Creating SCD2 task for {fully_qualified_silver_table}")
-                self.session.sql(task_sql).collect()
-                task_name = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{silver_table.upper()}"
-                self.logger.info(f"Successfully created SCD2 task: {task_name}")
+                self.logger.info(f"Executing SCD2 task {task_name}")
+                result = self.session.sql(f"EXECUTE TASK {task_name};").collect()
+                self.logger.info(f"Successfully executed task. Result: {result}")
             except Exception as e:
-                self.logger.error(f"Failed to create SCD2 task: {e}")
-                raise
-            
-            # Execute task if requested
-            if execute_tasks:
-                task_name = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{silver_table.upper()}"
-                try:
-                    self.logger.info(f"Executing SCD2 task {task_name}")
-                    result = self.session.sql(f"EXECUTE TASK {task_name}").collect()
-                    self.logger.info(f"Successfully executed task. Result: {result}")
-                except Exception as e:
-                    self.logger.error(f"Failed to execute task {task_name}: {e}")
-                    raise
+                self.logger.error(f"Failed to execute task {task_name}: {e}")
+                raise    
         
         self.logger.info(f"SCD2 silver pipeline execution completed. Processed {len(pipeline_silver_data)} table(s).")

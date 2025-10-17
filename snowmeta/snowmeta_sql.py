@@ -30,7 +30,7 @@ class SnowmetaSQL:
         silver_database: str,
         silver_schema: str,
         columns_to_flatten: list[str]
-    ) -> str:
+    ) -> dict:
         """
         Generate a Snowflake stored procedure to flatten multiple JSON/VARIANT columns into one view
         
@@ -46,11 +46,14 @@ class SnowmetaSQL:
             columns_to_flatten: List of JSON/VARIANT column names to flatten (e.g., ['product_details', 'shipping_info'])
         
         Returns:
-            SQL string containing the stored procedure
+            Dictionary containing:
+                - sql: SQL string containing the stored procedure
+                - procedure_name: Name of the generated procedure
+                - view_name: Name of the generated view
         
         Example:
             sql_gen = SnowmetaSQL()
-            sql = sql_gen.flatten_json(
+            result = sql_gen.flatten_json(
                 bronze_database='ANALYTICS',
                 bronze_schema='FINANCIAL_BRONZE',
                 bronze_table='products',
@@ -58,7 +61,9 @@ class SnowmetaSQL:
                 silver_schema='FINANCIAL_SILVER',
                 columns_to_flatten=['product_details', 'shipping_info']
             )
-            print(sql)
+            print(result['sql'])
+            print(f"Procedure: {result['procedure_name']}")
+            print(f"View: {result['view_name']}")
         """
         source_table = f"{bronze_database}.{bronze_schema}.{bronze_table}"
         target_schema = f"{silver_database}.{silver_schema}"
@@ -168,4 +173,8 @@ class SnowmetaSQL:
                     $$;
                 """
         
-        return sql
+        return {
+            'sql': sql,
+            'procedure_name': procedure_name,
+            'view_name': view_name
+        }
