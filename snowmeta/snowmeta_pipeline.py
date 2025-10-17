@@ -529,7 +529,7 @@ AS
     """
         return sql_procedure
     
-    def create_master_silver_task(self, pipeline_silver_data: Dict[str, Any], bronze_database: str, bronze_schema: str, 
+    def create_master_silver_task(self, pipeline_silver_data: Dict[str, Any], 
                          warehouse_name: str = "COMPUTE_WH", after_task: Optional[str] = None) -> str:
         """
         Generate SQL for creating a task for SCD Type 2 stored procedure.
