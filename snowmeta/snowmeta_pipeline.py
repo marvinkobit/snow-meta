@@ -680,7 +680,7 @@ AS
         silver_table_prime = pipeline_silver_data[0]["silver_table"]
 
         master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
-        master_procedure_body = ""
+        master_procedure_body = f""
            
         for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
@@ -711,7 +711,7 @@ AS
                 self.logger.info(f"Successfully created flattening procedure: {flattening_procedure_name}")
                 master_procedure_body += f"""
                 
-                CALL {silver_database}.{silver_schema}.{flattening_procedure_name};
+                CALL {silver_database}.{silver_schema}.{flattening_procedure_name}
                 
                 """
                 self.logger.info(f"Successfully created flattening view: {flattened_view_name}")
@@ -720,14 +720,14 @@ AS
 
                 master_procedure_body += f"""
                 
-                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}();
+                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}()
                 
                 """
             else:
                 procedure_sql = self.create_scd2_stored_procedure(silver_config)
                 master_procedure_body += f"""
                 
-                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}();
+                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}()
                 
                 """
             print(f"silver_config: {silver_config}")
