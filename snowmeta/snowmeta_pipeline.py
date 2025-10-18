@@ -82,7 +82,8 @@ class SnowmetaPipeline:
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN  
                     IF NOT EXISTS SRC_FILENAME VARCHAR,
-                    IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER;
+                    IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER
+                    IF NOT EXISTS _LOAD_TIMESTAMP TIMESTAMP_NTZ;
                     """
             procedure_body += f"""
             -- Copy data into table
@@ -93,7 +94,8 @@ class SnowmetaPipeline:
                 MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
                 INCLUDE_METADATA = (
                 SRC_FILENAME=METADATA$FILENAME,
-                SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+                SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
+                _LOAD_TIMESTAMP=CURRENT_TIMESTAMP()
                 );
 
             """
@@ -617,7 +619,7 @@ AS
         
         return scripts
     
-    def invoke_silver_scd2_pipeline(self, pipeline_silver_data: List[Dict[str, Any]], 
+    def invoke_silver_scd_pipeline(self, pipeline_silver_data: List[Dict[str, Any]], 
                                      pipeline_bronze_data: List[Dict[str, str]],
                                      warehouse_name: str = "COMPUTE_WH",
                                      bronze_task_name: Optional[str] = None,
@@ -648,8 +650,7 @@ AS
         Returns:
             None
             
-        Raises:
-            ValueError: If SCD type is not "2"
+        
             
         Example:
             >>> pipeline = SnowmetaPipeline(session)

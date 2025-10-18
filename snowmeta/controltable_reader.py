@@ -166,10 +166,24 @@ class ControlTableReader:
         # Add metadata columns (these are typically added by the pipeline)
         columns.append('  "SRC_FILENAME" VARCHAR')
         columns.append('  "SRC_FILE_ROW_NUMBER" NUMBER')
+        columns.append('  "_LOAD_TIMESTAMP" TIMESTAMP_NTZ')
+        
+        # Deduplicate columns based on column name (case insensitive)
+        seen = set()
+        deduped_columns = []
+        for col in columns:
+            # Assume column name is inside double quotes at start of col string
+            name_start = col.find('"') + 1
+            name_end = col.find('"', name_start)
+            col_name = col[name_start:name_end].lower() if name_start > 0 and name_end > 0 else col.lower()
+            if col_name not in seen:
+                deduped_columns.append(col)
+                seen.add(col_name)
+        columns = deduped_columns
         
         columns_sql = ',\n'.join(columns)
         create_table_sql = f"""CREATE TABLE IF NOT EXISTS {table_name} (
-{columns_sql}
-);"""
+                            {columns_sql}
+                            );"""
         
         return create_table_sql      
