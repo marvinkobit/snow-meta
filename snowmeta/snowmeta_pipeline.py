@@ -82,7 +82,7 @@ class SnowmetaPipeline:
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN  
                     IF NOT EXISTS SRC_FILENAME VARCHAR,
-                    IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER
+                    IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER,
                     IF NOT EXISTS _LOAD_TIMESTAMP TIMESTAMP_NTZ;
                     """
             procedure_body += f"""
