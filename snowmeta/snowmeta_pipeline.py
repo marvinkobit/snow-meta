@@ -520,7 +520,7 @@ AS
                                 update_conditions VARCHAR;
                             BEGIN
                                 -- Create temporary deduped source table
-                                CREATE OR REPLACE TEMP TABLE {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS
+                                CREATE OR REPLACE VIEW {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS
                                 SELECT *
                                 FROM (
                                     SELECT *,
@@ -708,38 +708,79 @@ AS
 
             silver_transformations = silver_config.get("silver_transformation_json")
             if silver_transformations:
-                columns_to_flatten = silver_transformations["columns_to_flatten"]
-                sql_gen = SnowmetaSQL()
-                flattening_sql_gen = sql_gen.flatten_json(
-                    bronze_database=bronze_database,
-                    bronze_schema=bronze_schema,
-                    bronze_table=bronze_table,
-                    silver_database=silver_database,
-                    silver_schema=silver_schema,
-                    columns_to_flatten=columns_to_flatten
-                )
-                flattening_procedure_sql = flattening_sql_gen['sql']
-                flattening_procedure_name = flattening_sql_gen['procedure_name']
-                flattened_view_name = flattening_sql_gen['view_name']
-                self.session.sql(flattening_procedure_sql).collect()
-                self.logger.info(f"Successfully created flattening procedure: {flattening_procedure_name}")
-                master_procedure_body += f"""
-                
-                CALL {silver_database}.{silver_schema}.{flattening_procedure_name}();
-                
-                """
-                self.logger.info(f"Successfully created flattening view: {flattened_view_name}")
+                select_expressions = silver_transformations.get("select_exp")
+                columns_to_flatten = silver_transformations.get("columns_to_flatten")
 
+
+                if columns_to_flatten:
+                    sql_gen = SnowmetaSQL()
+                    flattening_sql_gen = sql_gen.flatten_json(
+                        bronze_database=bronze_database,
+                        bronze_schema=bronze_schema,
+                        bronze_table=bronze_table,
+                        silver_database=silver_database,
+                        silver_schema=silver_schema,
+                        columns_to_flatten=columns_to_flatten
+                    )
+                    flattening_procedure_sql = flattening_sql_gen['sql']
+                    flattening_procedure_name = flattening_sql_gen['procedure_name']
+                    flattened_view_name = flattening_sql_gen['view_name']
+                    self.session.sql(flattening_procedure_sql).collect()
+                    self.logger.info(f"Successfully created flattening procedure: {flattening_procedure_name}")
+                    master_procedure_body += f"""
+                    
+                    CALL {silver_database}.{silver_schema}.{flattening_procedure_name}();
+                    
+                    """
+                    self.logger.info(f"Successfully created flattening view: {flattened_view_name}")
+                    
+                    transformed_view_name = flattened_view_name
+                    
+                if select_expressions:
+                    sql_gen = SnowmetaSQL()
+                    if columns_to_flatten:
+                        select_expression_sql_gen = sql_gen.select_expression(
+                            bronze_database=silver_database,
+                            bronze_schema=silver_schema,
+                            bronze_table=flattened_view_name,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            select_expression=select_expressions
+                        )
+
+                    else:
+                        select_expression_sql_gen = sql_gen.select_expression(
+                            bronze_database=bronze_database,
+                            bronze_schema=bronze_schema,
+                            bronze_table=bronze_table,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            select_expression=select_expressions
+                        )
+                    select_expression_procedure_sql = select_expression_sql_gen['sql']
+                    select_expression_procedure_name = select_expression_sql_gen['procedure_name']
+                    select_expression_view_name = select_expression_sql_gen['view_name']
+                    self.session.sql(select_expression_procedure_sql).collect()
+                    self.logger.info(f"Successfully created select expression procedure: {select_expression_procedure_name}")
+                    self.logger.info(f"Successfully created select expression view: {select_expression_view_name}")
+                    master_procedure_body += f"""
+                    
+                    CALL {silver_database}.{silver_schema}.{select_expression_procedure_name}();
+                    
+                    """
+
+                    transformed_view_name = select_expression_view_name
+                
                 if scd_type == "2":
-                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, flattened_view_name)
+                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, transformed_view_name)
                 if scd_type == "1":
-                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, flattened_view_name)
+                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, transformed_view_name)
 
                 master_procedure_body += f"""
-                
-                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD{scd_type}_{silver_table.upper()}();
-                
-                """
+                    
+                    CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD{scd_type}_{silver_table.upper()}();
+                    
+                    """
             else:
                 if scd_type == "2":
                     scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config)
