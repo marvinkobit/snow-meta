@@ -80,10 +80,9 @@ class SnowmetaPipeline:
                         )
                     );
 
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN  
-                    IF NOT EXISTS SRC_FILENAME VARCHAR,
-                    IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER,
-                    IF NOT EXISTS _LOAD_TIMESTAMP TIMESTAMP_NTZ;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS SRC_FILENAME VARCHAR;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _LOAD_TIMESTAMP TIMESTAMP_NTZ;
                     """
             procedure_body += f"""
             -- Copy data into table
@@ -94,9 +93,12 @@ class SnowmetaPipeline:
                 MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
                 INCLUDE_METADATA = (
                 SRC_FILENAME=METADATA$FILENAME,
-                SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
-                _LOAD_TIMESTAMP=CURRENT_TIMESTAMP()
+                SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
                 );
+                
+            UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
+            SET _LOAD_TIMESTAMP = CURRENT_TIMESTAMP()
+            WHERE _LOAD_TIMESTAMP IS NULL;
 
             """
         
