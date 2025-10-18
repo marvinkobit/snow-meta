@@ -742,9 +742,9 @@ AS
                 """
             else:
                 if scd_type == "2":
-                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, flattened_view_name)
+                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config)
                 if scd_type == "1":
-                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, flattened_view_name)
+                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config)
 
                 master_procedure_body += f"""
                 
