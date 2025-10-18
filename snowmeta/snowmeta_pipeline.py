@@ -276,9 +276,11 @@ AS
                     self.logger.info(f"Executing unified task {bronze_database}.{bronze_schema}.{task_name}")
                     result = self.session.sql(f"EXECUTE TASK {bronze_database}.{bronze_schema}.{task_name}").collect()
                     self.logger.info(f"Successfully executed unified task. Result: {result}")
+                    return result
                 except Exception as e:
                     self.logger.error(f"Failed to execute unified task: {e}")
-                    raise
+                    
+                    
                 
                 # Break after creating unified procedure and task (only once)
                 break
@@ -407,6 +409,67 @@ AS
         
         self.logger.info(f"Silver pipeline execution completed. Processed {len(pipeline_silver_data)} dynamic table(s).")
     
+    def create_scd1_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None) -> str:    
+        """
+        Generate SQL for creating a stored procedure for SCD Type 1 silver table.
+        """
+        bronze_database = silver_config["bronze_database_dev"]
+        bronze_schema = silver_config["bronze_schema"]
+        bronze_table = silver_config["bronze_table"]
+
+        if flattened_view_name:
+            bronze_database = silver_config["silver_database_dev"]
+            bronze_schema = silver_config["silver_schema"]
+            bronze_table = flattened_view_name
+
+        
+        silver_database = silver_config["silver_database_dev"]
+        silver_schema = silver_config["silver_schema"]
+        silver_table = silver_config["silver_table"]
+        cdc_config = silver_config["silver_cdc_apply_changes"]
+        
+        key_columns = cdc_config["keys"]
+        sequence_by_column = cdc_config["sequence_by"]
+
+        # Quote identifiers
+        key_column = key_columns[0]
+        key_column_quoted = f'"{key_column.upper()}"'
+        sequence_by_quoted = f'"{sequence_by_column.upper()}"'
+
+        # Build procedure name
+        procedure_name = f"SP_UPSERT_SCD1_{silver_table.upper()}"
+
+        # Compose the SQL for the procedure
+        sql_procedure = f"""
+                        CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
+                        RETURNS VARCHAR
+                        LANGUAGE SQL
+                        EXECUTE AS OWNER
+                        AS
+                        $$
+                        BEGIN
+                            -- Create silver table if it doesn't exist (using bronze table structure)
+                            CREATE TABLE IF NOT EXISTS {silver_database}.{silver_schema}.{silver_table.upper()} 
+                            AS SELECT * FROM {bronze_database}.{bronze_schema}.{bronze_table.upper()} WHERE 1=0;
+                            
+                            -- Simple SCD1 merge with UPDATE ALL BY NAME and INSERT ALL BY NAME
+                            MERGE INTO {silver_database}.{silver_schema}.{silver_table.upper()} t
+                            USING (
+                                SELECT * FROM {bronze_database}.{bronze_schema}.{bronze_table.upper()} b
+                                QUALIFY ROW_NUMBER() OVER (PARTITION BY b.{key_column_quoted} ORDER BY b.{sequence_by_quoted} DESC) = 1
+                            ) s
+                            ON t.{key_column_quoted} = s.{key_column_quoted}
+                            WHEN MATCHED THEN
+                                UPDATE ALL BY NAME
+                            WHEN NOT MATCHED THEN
+                                INSERT ALL BY NAME;
+                            RETURN 'SCD1 merge completed on {silver_table.upper()}';
+                        END;
+                        $$;
+                        """
+        return sql_procedure
+               
+    
     def create_scd2_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None) -> str:    
         """
         Generate SQL for creating a stored procedure for SCD Type 2 silver table.
@@ -445,92 +508,92 @@ AS
         excluded_cols_sql = ', '.join([f"'{col.upper()}'" for col in excluded_cols_list])
 
         sql_procedure = f"""
-    CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
-    RETURNS VARCHAR
-    LANGUAGE SQL
-    EXECUTE AS OWNER
-    AS
-    $$
-    DECLARE
-        columns_list VARCHAR;
-        select_columns_list VARCHAR;
-        update_conditions VARCHAR;
-    BEGIN
-        -- Create temporary deduped source table
-        CREATE OR REPLACE TEMP TABLE {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS
-        SELECT *
-        FROM (
-            SELECT *,
-                    ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
-            FROM {bronze_database}.{bronze_schema}.{bronze_table}
-        )
-        WHERE rn = 1;
+                            CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
+                            RETURNS VARCHAR
+                            LANGUAGE SQL
+                            EXECUTE AS OWNER
+                            AS
+                            $$
+                            DECLARE
+                                columns_list VARCHAR;
+                                select_columns_list VARCHAR;
+                                update_conditions VARCHAR;
+                            BEGIN
+                                -- Create temporary deduped source table
+                                CREATE OR REPLACE TEMP TABLE {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS
+                                SELECT *
+                                FROM (
+                                    SELECT *,
+                                            ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
+                                    FROM {bronze_database}.{bronze_schema}.{bronze_table}
+                                )
+                                WHERE rn = 1;
 
-        -- Create silver table if it doesn't exist (schema only, no data)
-        CREATE TABLE IF NOT EXISTS {silver_database}.{silver_schema}.{silver_table}
-        AS
-        SELECT
-            *,
-            CAST(CURRENT_TIMESTAMP() AS TIMESTAMP_NTZ) AS VALID_FROM,
-            CAST(NULL AS TIMESTAMP_NTZ) AS VALID_TO,
-            TRUE AS IS_CURRENT
-        FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table}
-        WHERE 1=0;
+                                -- Create silver table if it doesn't exist (schema only, no data)
+                                CREATE TABLE IF NOT EXISTS {silver_database}.{silver_schema}.{silver_table}
+                                AS
+                                SELECT
+                                    *,
+                                    CAST(CURRENT_TIMESTAMP() AS TIMESTAMP_NTZ) AS VALID_FROM,
+                                    CAST(NULL AS TIMESTAMP_NTZ) AS VALID_TO,
+                                    TRUE AS IS_CURRENT
+                                FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table}
+                                WHERE 1=0;
 
-        -- Get column list dynamically for the INSERT INTO target list (unprefixed)
-        SELECT LISTAGG('"' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
-        INTO :columns_list
-        FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
-        AND TABLE_NAME = '{silver_table.upper()}'
-        AND COLUMN_NAME NOT IN ({excluded_cols_sql})
-        ;
+                                -- Get column list dynamically for the INSERT INTO target list (unprefixed)
+                                SELECT LISTAGG('"' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+                                INTO :columns_list
+                                FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
+                                WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
+                                AND TABLE_NAME = '{silver_table.upper()}'
+                                AND COLUMN_NAME NOT IN ({excluded_cols_sql})
+                                ;
 
-        -- Get column list dynamically for the SELECT statement (prefixed with 'source.')
-        SELECT LISTAGG('source."' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
-        INTO :select_columns_list
-        FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
-        AND TABLE_NAME = '{silver_table.upper()}'
-        AND COLUMN_NAME NOT IN ({excluded_cols_sql})
-        ;
+                                -- Get column list dynamically for the SELECT statement (prefixed with 'source.')
+                                SELECT LISTAGG('source."' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+                                INTO :select_columns_list
+                                FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
+                                WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
+                                AND TABLE_NAME = '{silver_table.upper()}'
+                                AND COLUMN_NAME NOT IN ({excluded_cols_sql})
+                                ;
 
-        -- Build update conditions for detecting changes (Exclude Key, SCD2 fields, and excluded cols)
-        SELECT LISTAGG('target."' || COLUMN_NAME || '" IS DISTINCT FROM source."' || COLUMN_NAME || '"', ' OR ')
-        INTO :update_conditions
-        FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
-        AND TABLE_NAME = '{silver_table.upper()}'
-        AND COLUMN_NAME NOT IN ('{key_column.upper()}', {excluded_cols_sql})
-        ;
+                                -- Build update conditions for detecting changes (Exclude Key, SCD2 fields, and excluded cols)
+                                SELECT LISTAGG('target."' || COLUMN_NAME || '" IS DISTINCT FROM source."' || COLUMN_NAME || '"', ' OR ')
+                                INTO :update_conditions
+                                FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
+                                WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
+                                AND TABLE_NAME = '{silver_table.upper()}'
+                                AND COLUMN_NAME NOT IN ('{key_column.upper()}', {excluded_cols_sql})
+                                ;
 
-        -- Expire existing records where changes are detected
-        EXECUTE IMMEDIATE '
-        UPDATE {silver_database}.{silver_schema}.{silver_table} AS target
-        SET VALID_TO = CURRENT_TIMESTAMP(),
-            IS_CURRENT = FALSE
-        FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
-        WHERE target.{key_column_quoted} = source.{key_column_quoted}
-        AND target.IS_CURRENT = TRUE
-        AND (' || :update_conditions || ')
-        ';
+                                -- Expire existing records where changes are detected
+                                EXECUTE IMMEDIATE '
+                                UPDATE {silver_database}.{silver_schema}.{silver_table} AS target
+                                SET VALID_TO = CURRENT_TIMESTAMP(),
+                                    IS_CURRENT = FALSE
+                                FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
+                                WHERE target.{key_column_quoted} = source.{key_column_quoted}
+                                AND target.IS_CURRENT = TRUE
+                                AND (' || :update_conditions || ')
+                                ';
 
-        -- Insert new and changed records
-        EXECUTE IMMEDIATE '
-        INSERT INTO {silver_database}.{silver_schema}.{silver_table} (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT)
-        SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE
-        FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
-        LEFT JOIN {silver_database}.{silver_schema}.{silver_table} AS target
-            ON source.{key_column_quoted} = target.{key_column_quoted} AND target.IS_CURRENT = TRUE
-        WHERE
-            target.{key_column_quoted} IS NULL
-            OR (' || :update_conditions || ')
-        ';
+                                -- Insert new and changed records
+                                EXECUTE IMMEDIATE '
+                                INSERT INTO {silver_database}.{silver_schema}.{silver_table} (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT)
+                                SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE
+                                FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
+                                LEFT JOIN {silver_database}.{silver_schema}.{silver_table} AS target
+                                    ON source.{key_column_quoted} = target.{key_column_quoted} AND target.IS_CURRENT = TRUE
+                                WHERE
+                                    target.{key_column_quoted} IS NULL
+                                    OR (' || :update_conditions || ')
+                                ';
 
-        RETURN 'SCD2 upsert complete for {silver_table.upper()}';
-    END;
-    $$;
-    """
+                                RETURN 'SCD2 upsert complete for {silver_table.upper()}';
+                            END;
+                            $$;
+                            """
         return sql_procedure
     
     def create_master_silver_task(self, pipeline_silver_data: Dict[str, Any], 
@@ -555,7 +618,7 @@ AS
         bronze_schema_prime = pipeline_silver_data[0]["bronze_schema"]
         
         master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
-        task_name = f"TASK_SILVER_SCD2_{silver_schema_prime.upper()}"
+        task_name = f"TASK_SILVER_SCD_{silver_schema_prime.upper()}"
         
         after_clause = f"AFTER {after_task}" if after_task else ""
         
@@ -568,64 +631,12 @@ AS
                             """
         return master_sql_task
     
-    def generate_scd2_sql_scripts(self, pipeline_silver_data: List[Dict[str, Any]], 
-                                   pipeline_bronze_data: List[Dict[str, str]],
-                                   warehouse_name: str = "COMPUTE_WH",
-                                   bronze_task_name: Optional[str] = None) -> List[Dict[str, str]]:
-        """
-        Generate standalone SQL scripts for SCD Type 2 stored procedures and tasks.
-        
-        Args:
-            pipeline_silver_data: List of dictionaries containing silver pipeline configuration
-            pipeline_bronze_data: List of dictionaries containing bronze pipeline configuration
-            warehouse_name: Warehouse to use for tasks
-            bronze_task_name: Optional bronze task to chain after (e.g., "ANALYTICS.FINANCIAL_BRONZE.INGEST_ALL_BRONZE")
-            
-        Returns:
-            List of dictionaries with 'procedure', 'task', 'procedure_name', 'task_name', and 'execute_task' keys
-        """
-        # Get bronze database and schema from pipeline_bronze_data
-        bronze_database = pipeline_bronze_data[0]["bronze_database_dev"]
-        bronze_schema = pipeline_bronze_data[0]["bronze_schema"]
-        
-        scripts = []
-        
-        for idx, silver_config in enumerate(pipeline_silver_data):
-            # Determine if this task should run after bronze task or previous silver task
-            if idx == 0 and bronze_task_name:
-                after_task = bronze_task_name
-            elif idx > 0:
-                prev_config = pipeline_silver_data[idx - 1]
-                prev_silver_table = prev_config["silver_table"]
-                after_task = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{prev_silver_table.upper()}"
-            else:
-                after_task = None
-            
-            procedure_sql = self.create_scd2_stored_procedure(silver_config)
-            task_sql = self.create_scd2_task(silver_config, bronze_database, bronze_schema, warehouse_name, after_task)
-            
-            silver_database = silver_config["silver_database_dev"]
-            silver_schema = silver_config["silver_schema"]
-            silver_table = silver_config["silver_table"]
-            procedure_name = f"{silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}"
-            task_name = f"{bronze_database}.{bronze_schema}.TASK_SCD2_{silver_table.upper()}"
-            
-            scripts.append({
-                'procedure': procedure_sql,
-                'task': task_sql,
-                'procedure_name': procedure_name,
-                'task_name': task_name,
-                'execute_task': f"EXECUTE TASK {task_name};",
-                'table_name': f"{silver_database}.{silver_schema}.{silver_table}"
-            })
-        
-        return scripts
     
     def invoke_silver_scd_pipeline(self, pipeline_silver_data: List[Dict[str, Any]], 
                                      pipeline_bronze_data: List[Dict[str, str]],
                                      warehouse_name: str = "COMPUTE_WH",
                                      bronze_task_name: Optional[str] = None,
-                                     execute_tasks: bool = True) -> None:
+                                     execute_tasks: bool = True) -> Any:
         """
         Execute a silver layer pipeline that creates stored procedures and tasks for SCD Type 2 logic.
         
@@ -719,37 +730,41 @@ AS
                 """
                 self.logger.info(f"Successfully created flattening view: {flattened_view_name}")
 
-                procedure_sql = self.create_scd2_stored_procedure(silver_config, flattened_view_name)
+                if scd_type == "2":
+                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, flattened_view_name)
+                if scd_type == "1":
+                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, flattened_view_name)
 
                 master_procedure_body += f"""
                 
-                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}();
+                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD{scd_type}_{silver_table.upper()}();
                 
                 """
             else:
-                procedure_sql = self.create_scd2_stored_procedure(silver_config)
+                if scd_type == "2":
+                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, flattened_view_name)
+                if scd_type == "1":
+                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, flattened_view_name)
+
                 master_procedure_body += f"""
                 
-                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}();
+                CALL {silver_database}.{silver_schema}.SP_UPSERT_SCD{scd_type}_{silver_table.upper()}();
                 
                 """
-            print(f"silver_config: {silver_config}")
-            # Validate SCD type
-            if scd_type != "2":
-                error_msg = f"Only SCD type 2 supported in this method; got {scd_type} for {silver_table}"
-                self.logger.error(error_msg)
-                raise ValueError(error_msg)
-            
+
             fully_qualified_silver_table = f"{silver_database}.{silver_schema}.{silver_table}"
             
             self.logger.info(f"Processing SCD2 silver pipeline {pipeline_index}/{len(pipeline_silver_data)}: {fully_qualified_silver_table}")                      
             # Create stored procedure           
             try:
                 self.logger.info(f"Creating SCD2 stored procedure for {fully_qualified_silver_table}")
-                self.session.sql(procedure_sql).collect()
-                self.logger.info(f"Successfully created SCD2 stored procedure")
+                if scd_type == "2":
+                    self.session.sql(scd2_procedure_sql).collect()
+                if scd_type == "1":
+                    self.session.sql(scd1_procedure_sql).collect()
+                self.logger.info(f"Successfully created SCD{scd_type} stored procedure")
             except Exception as e:
-                self.logger.error(f"Failed to create SCD2 stored procedure: {e}")
+                self.logger.error(f"Failed to create SCD{scd_type} stored procedure: {e}")
                 raise
 
         master_silver_procedure = f"""
@@ -774,7 +789,7 @@ AS
         try:
             self.logger.info(f"Creating SCD2 task for Tables in  {silver_database_prime}.{silver_schema_prime}")
             self.session.sql(task_sql).collect()
-            task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD2_{silver_schema_prime.upper()}"
+            task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD_{silver_schema_prime.upper()}"
             self.logger.info(f"Successfully created SCD2 task: {task_name}")
         except Exception as e:
             self.logger.error(f"Failed to create SCD2 task: {e}")
@@ -782,11 +797,12 @@ AS
         
         # Execute task if requested
         if execute_tasks:
-            task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD2_{silver_schema_prime.upper()}"
+            task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD_{silver_schema_prime.upper()}"
             try:
                 self.logger.info(f"Executing SCD2 task {task_name}")
                 result = self.session.sql(f"EXECUTE TASK {task_name};").collect()
                 self.logger.info(f"Successfully executed task. Result: {result}")
+                return result
             except Exception as e:
                 self.logger.error(f"Failed to execute task {task_name}: {e}")
                 raise    
