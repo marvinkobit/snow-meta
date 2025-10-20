@@ -53,6 +53,8 @@ class SnowmetaPipeline:
             source_table = pipeline_config["source_table"]
             source_path = pipeline_config["source_path_dev"]
             file_format = pipeline_config["reader_format"]
+            variantload = pipeline_config.get("variant_load", False)
+            variant_column_name = pipeline_config.get("variant_column_name", "SRC")
             bronze_table = pipeline_config["bronze_table"]
             byos_schema_location = pipeline_config.get("byos_schema")
             
@@ -62,6 +64,51 @@ class SnowmetaPipeline:
                 create_table_sql = self.controltable_reader.generate_create_table_from_schema(schema_dict, f"{bronze_database}.{bronze_schema}.{bronze_table}")
                 # Use custom schema from JSON file
                 procedure_body += f""" {create_table_sql} """
+
+                procedure_body += f"""
+                -- Copy data into table
+                COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                    FROM '{source_path}'
+                    FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                    PATTERN = '.*\\.{file_format.lower()}'
+                    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+                    INCLUDE_METADATA = (
+                    _SRC_FILENAME=METADATA$FILENAME,
+                    _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+                    );
+                    
+                UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
+                SET _LOAD_TIMESTAMP = CURRENT_TIMESTAMP()
+                WHERE _LOAD_TIMESTAMP IS NULL;
+
+                """
+            
+            elif variantload:
+                procedure_body += f"""
+                    -- Processing {bronze_table}
+                    -- Create variant table to ingest semi-structured data if it doesn't exist
+                    CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table}
+                        {variant_column_name} VARIANT,
+                        _SRC_FILENAME VARCHAR,
+                        _SRC_FILE_ROW_NUMBER VARCHAR,
+                        _LOAD_TIMESTAMP TIMESTAMP_NTZ
+                    );
+                     """
+                procedure_body += f"""
+                    -- Copy data into table
+                    COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                        FROM (
+                            SELECT
+                                $1 AS {variant_column_name},
+                                METADATA$FILENAME AS _SRC_FILENAME,
+                                METADATA$FILE_ROW_NUMBER AS _SRC_FILE_ROW_NUMBER,
+                                CURRENT_TIMESTAMP() AS _LOAD_TIMESTAMP
+                            FROM '{source_path}'
+                            )
+                        FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                        PATTERN = '.*\\.{file_format.lower()}'
+                        );
+                    """
 
             else:
                 procedure_body += f"""
@@ -80,27 +127,27 @@ class SnowmetaPipeline:
                         )
                     );
 
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS SRC_FILENAME VARCHAR;
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS SRC_FILE_ROW_NUMBER NUMBER;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILENAME VARCHAR;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _LOAD_TIMESTAMP TIMESTAMP_NTZ;
                     """
-            procedure_body += f"""
-            -- Copy data into table
-            COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
-                FROM '{source_path}'
-                FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
-                PATTERN = '.*\\.{file_format.lower()}'
-                MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
-                INCLUDE_METADATA = (
-                SRC_FILENAME=METADATA$FILENAME,
-                SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
-                );
-                
-            UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
-            SET _LOAD_TIMESTAMP = CURRENT_TIMESTAMP()
-            WHERE _LOAD_TIMESTAMP IS NULL;
+                procedure_body += f"""
+                -- Copy data into table
+                COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                    FROM '{source_path}'
+                    FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                    PATTERN = '.*\\.{file_format.lower()}'
+                    MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+                    INCLUDE_METADATA = (
+                    _SRC_FILENAME=METADATA$FILENAME,
+                    _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+                    );
+                    
+                UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
+                SET _LOAD_TIMESTAMP = CURRENT_TIMESTAMP()
+                WHERE _LOAD_TIMESTAMP IS NULL;
 
-            """
+                """
         
         sql_procedure = f"""
             CREATE OR REPLACE PROCEDURE {bronze_database}.{bronze_schema}.{procedure_name}()
@@ -140,11 +187,11 @@ class SnowmetaPipeline:
         task_name = f"INGEST_ALL_BRONZE"
         
         sql_task = f"""
-CREATE OR REPLACE TASK {bronze_database}.{bronze_schema}.{task_name}
-  WAREHOUSE = {warehouse_name}
-AS
-  CALL {bronze_database}.{bronze_schema}.{procedure_name}();
-"""
+                    CREATE OR REPLACE TASK {bronze_database}.{bronze_schema}.{task_name}
+                    WAREHOUSE = {warehouse_name}
+                    AS
+                    CALL {bronze_database}.{bronze_schema}.{procedure_name}();
+                    """
         return sql_task
     
     def generate_bronze_sql_scripts(self, pipeline_data: List[Dict[str, str]], warehouse_name: str = "COMPUTE_WH") -> Dict[str, str]:
