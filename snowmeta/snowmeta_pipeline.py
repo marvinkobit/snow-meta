@@ -87,16 +87,17 @@ class SnowmetaPipeline:
                 procedure_body += f"""
                     -- Processing {bronze_table}
                     -- Create variant table to ingest semi-structured data if it doesn't exist
-                    CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table}
+                    CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table} (
                         {variant_column_name} VARIANT,
                         _SRC_FILENAME VARCHAR,
                         _SRC_FILE_ROW_NUMBER VARCHAR,
                         _LOAD_TIMESTAMP TIMESTAMP_NTZ
                     );
+
                      """
                 procedure_body += f"""
                     -- Copy data into table
-                    COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                    COPY INTO {bronze_database}.{bronze_schema}.{bronze_table} 
                         FROM (
                             SELECT
                                 $1 AS {variant_column_name},
@@ -106,8 +107,7 @@ class SnowmetaPipeline:
                             FROM '{source_path}'
                             )
                         FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
-                        PATTERN = '.*\\.{file_format.lower()}'
-                        );
+                        PATTERN = '.*\\.{file_format.lower()}';
                     """
 
             else:
