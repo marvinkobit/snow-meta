@@ -74,12 +74,13 @@ class SnowmetaPipeline:
                     MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
                     INCLUDE_METADATA = (
                     _SRC_FILENAME=METADATA$FILENAME,
-                    _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+                    _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
+                    _RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
                     );
                     
                 UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
-                SET _LOAD_TIMESTAMP = CURRENT_TIMESTAMP()
-                WHERE _LOAD_TIMESTAMP IS NULL;
+                SET _INGEST_TIMESTAMP = CURRENT_TIMESTAMP()
+                WHERE _INGEST_TIMESTAMP IS NULL;
 
                 """
             
@@ -91,7 +92,9 @@ class SnowmetaPipeline:
                         {variant_column_name} VARIANT,
                         _SRC_FILENAME VARCHAR,
                         _SRC_FILE_ROW_NUMBER VARCHAR,
-                        _LOAD_TIMESTAMP TIMESTAMP_NTZ
+                        _RECEIVED_TIMESTAMP TIMESTAMP_NTZ,
+                        _INGEST_TIMESTAMP TIMESTAMP_NTZ,
+                       
                     );
 
                      """
@@ -103,7 +106,8 @@ class SnowmetaPipeline:
                                 $1 AS {variant_column_name},
                                 METADATA$FILENAME AS _SRC_FILENAME,
                                 METADATA$FILE_ROW_NUMBER AS _SRC_FILE_ROW_NUMBER,
-                                CURRENT_TIMESTAMP() AS _LOAD_TIMESTAMP
+                                METADATA$FILE_LAST_MODIFIED AS _RECEIVED_TIMESTAMP,
+                                CURRENT_TIMESTAMP() AS _INGEST_TIMESTAMP
                             FROM '{source_path}'
                             )
                         FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
@@ -129,7 +133,8 @@ class SnowmetaPipeline:
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILENAME VARCHAR;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _LOAD_TIMESTAMP TIMESTAMP_NTZ;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGEST_TIMESTAMP TIMESTAMP_NTZ;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _RECEIVED_TIMESTAMP TIMESTAMP_NTZ;
                     """
                 procedure_body += f"""
                 -- Copy data into table
@@ -140,12 +145,13 @@ class SnowmetaPipeline:
                     MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
                     INCLUDE_METADATA = (
                     _SRC_FILENAME=METADATA$FILENAME,
-                    _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER
+                    _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
+                    _RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
                     );
                     
                 UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
-                SET _LOAD_TIMESTAMP = CURRENT_TIMESTAMP()
-                WHERE _LOAD_TIMESTAMP IS NULL;
+                SET _INGEST_TIMESTAMP = CURRENT_TIMESTAMP()
+                WHERE _INGEST_TIMESTAMP IS NULL;
 
                 """
         
