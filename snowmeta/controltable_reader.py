@@ -188,6 +188,7 @@ class ControlTableReader:
                             {columns_sql}
                             );
                             
-                            CREATE OR REPLACE STREAM stream_{table_name} ON TABLE {table_name};"""
+                            CREATE OR REPLACE STREAM stream_{table_name} ON TABLE {table_name};
+                            """
         
         return create_table_sql      

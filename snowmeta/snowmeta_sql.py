@@ -174,7 +174,7 @@ class SnowmetaSQL:
         WHERE p.{column} IS NOT NULL;
 
         IF (keys_{i} IS NOT NULL AND ARRAY_SIZE(keys_{i}) > 0) THEN
-            SELECT LISTAGG(CONCAT('''', value, ''' AS {column_prefix}_', value), ', ') INTO :key_list_{i}
+            SELECT LISTAGG(CONCAT('''', value, ''' AS ', value), ', ') INTO :key_list_{i}
             FROM TABLE(FLATTEN(input => :keys_{i}));
         ELSE
             key_list_{i} := NULL;
