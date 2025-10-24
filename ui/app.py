@@ -43,7 +43,7 @@ def render_onboarding_tab():
         st.session_state.silver_entries = []
     
     # Global configuration section
-    st.subheader("🔧 Global Configuration")
+    st.subheader("Global Configuration")
     
     col1, col2 = st.columns(2)
     
@@ -66,7 +66,7 @@ def render_onboarding_tab():
     st.divider()
     
     # Pipeline Configuration Form
-    st.subheader("📊 Pipeline Configuration")
+    st.subheader("Pipeline Configuration")
     st.markdown("Configure bronze and silver pipeline entries together")
     
     with st.form("pipeline_form", clear_on_submit=True):
@@ -74,7 +74,7 @@ def render_onboarding_tab():
         bronze_col, silver_col = st.columns(2)
         
         with bronze_col:
-            st.markdown("### 🥉 Bronze Layer Configuration")
+            st.markdown("### Bronze Layer Configuration")
             st.markdown("Configure raw data ingestion pipeline")
             
             col1, col2 = st.columns(2)
@@ -114,7 +114,7 @@ def render_onboarding_tab():
                 )
         
         with silver_col:
-            st.markdown("### 🥈 Silver Layer Configuration")
+            st.markdown("### Silver Layer Configuration")
             st.markdown("Configure cleansed data transformation pipeline")
             
             col1, col2 = st.columns(2)
@@ -175,10 +175,10 @@ def render_onboarding_tab():
                 )
         
         # Single Add Entry Button
-        if st.form_submit_button("➕ Add Pipeline Entry", type="primary", use_container_width=True):
+        if st.form_submit_button("Add Pipeline Entry", type="primary", use_container_width=True):
             # Validate required fields
             if not all([source_table, bronze_table, silver_table]):
-                st.error("❌ Source table, Bronze table, and Silver table are required!")
+                st.error("Source table, Bronze table, and Silver table are required!")
             else:
                 # Parse keys and except columns
                 keys = [k.strip() for k in keys_input.split(",") if k.strip()]
@@ -220,37 +220,37 @@ def render_onboarding_tab():
                 st.session_state.bronze_entries.append(bronze_entry)
                 st.session_state.silver_entries.append(silver_entry)
                 
-                st.success(f"✅ Added pipeline entry: {source_table} → {bronze_table} → {silver_table}")
+                st.success(f"Added pipeline entry: {source_table} → {bronze_table} → {silver_table}")
                 st.rerun()
     
     st.divider()
     
     # Display current entries in table format
     if st.session_state.bronze_entries or st.session_state.silver_entries:
-        st.subheader("📋 Current Pipeline Entries")
+        st.subheader("Current Pipeline Entries")
         
         # Create a table with two columns
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### 🥉 Bronze Pipeline Control")
+            st.markdown("### Bronze Pipeline Control")
             if st.session_state.bronze_entries:
                 for i, entry in enumerate(st.session_state.bronze_entries):
                     with st.expander(f"Entry {i+1}: {entry['source_table']} → {entry['bronze_table']}", expanded=False):
                         st.json(entry)
-                        if st.button(f"🗑️ Remove Bronze Entry {i+1}", key=f"remove_bronze_{i}"):
+                        if st.button(f"Remove Bronze Entry {i+1}", key=f"remove_bronze_{i}"):
                             st.session_state.bronze_entries.pop(i)
                             st.rerun()
             else:
                 st.info("No bronze entries added yet")
         
         with col2:
-            st.markdown("### 🥈 Silver Pipeline Control")
+            st.markdown("### Silver Pipeline Control")
             if st.session_state.silver_entries:
                 for i, entry in enumerate(st.session_state.silver_entries):
                     with st.expander(f"Entry {i+1}: {entry['bronze_table']} → {entry['silver_table']}", expanded=False):
                         st.json(entry)
-                        if st.button(f"🗑️ Remove Silver Entry {i+1}", key=f"remove_silver_{i}"):
+                        if st.button(f"Remove Silver Entry {i+1}", key=f"remove_silver_{i}"):
                             st.session_state.silver_entries.pop(i)
                             st.rerun()
             else:
@@ -258,7 +258,7 @@ def render_onboarding_tab():
         
         # Show paired entries summary
         if st.session_state.bronze_entries and st.session_state.silver_entries:
-            st.markdown("### 📊 Pipeline Summary")
+            st.markdown("### Pipeline Summary")
             st.markdown(f"**Total Pipeline Entries:** {len(st.session_state.bronze_entries)}")
             
             # Create a summary table
@@ -284,7 +284,7 @@ def render_onboarding_tab():
     
     # Generate JSON and Export
     if st.session_state.bronze_entries or st.session_state.silver_entries:
-        st.subheader("📤 Export Configuration")
+        st.subheader("Export Configuration")
         
         # Generate the JSON structures
         pipeline_bronze_control_table = st.session_state.bronze_entries.copy()
@@ -318,7 +318,7 @@ def render_onboarding_tab():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Download Bronze JSON", use_container_width=True):
+            if st.button("Download Bronze JSON", use_container_width=True):
                 st.download_button(
                     label="Download Bronze Configuration",
                     data=json.dumps(pipeline_bronze_control_table, indent=2),
@@ -327,7 +327,7 @@ def render_onboarding_tab():
                 )
         
         with col2:
-            if st.button("💾 Download Silver JSON", use_container_width=True):
+            if st.button("Download Silver JSON", use_container_width=True):
                 st.download_button(
                     label="Download Silver Configuration",
                     data=json.dumps(pipeline_silver_control_table, indent=2),
@@ -336,7 +336,7 @@ def render_onboarding_tab():
                 )
         
         with col3:
-            if st.button("💾 Download Complete Config", use_container_width=True):
+            if st.button("Download Complete Config", use_container_width=True):
                 st.download_button(
                     label="Download Complete Configuration",
                     data=json.dumps(complete_config, indent=2),
@@ -345,14 +345,14 @@ def render_onboarding_tab():
                 )
         
         # Save to session state for deployment
-        if st.button("✅ Save Configuration", type="primary", use_container_width=True):
+        if st.button("Save Configuration", type="primary", use_container_width=True):
             st.session_state.onboarding_data = complete_config
             st.session_state.onboarding_complete = True
-            st.success("✅ Pipeline configuration saved successfully!")
-            st.info("📋 Configuration saved. You can now proceed to the Deployment tab.")
+            st.success("Pipeline configuration saved successfully!")
+            st.info("Configuration saved. You can now proceed to the Deployment tab.")
     
     else:
-        st.info("👆 Add at least one bronze or silver pipeline entry to generate configuration")
+        st.info("Add at least one bronze or silver pipeline entry to generate configuration")
 
 
 def render_deployment_tab():
@@ -360,7 +360,7 @@ def render_deployment_tab():
     st.header("Step 2: Deployment")
     
     if not st.session_state.onboarding_complete:
-        st.warning("⚠️ Please complete the Pipeline Configuration step first before proceeding with deployment.")
+        st.warning("Please complete the Pipeline Configuration step first before proceeding with deployment.")
         return
     
     st.markdown("### Deploy Pipeline Configuration")
@@ -372,16 +372,16 @@ def render_deployment_tab():
         bronze_entries = config.get("pipeline_bronze_control_table", [])
         silver_entries = config.get("pipeline_silver_control_table", [])
         
-        st.info(f"📊 Ready to deploy: {len(bronze_entries)} bronze entries, {len(silver_entries)} silver entries")
+        st.info(f"Ready to deploy: {len(bronze_entries)} bronze entries, {len(silver_entries)} silver entries")
         
         # Display configuration summary
-        with st.expander("📋 View Current Configuration", expanded=False):
+        with st.expander("View Current Configuration", expanded=False):
             st.json(config)
     
     st.divider()
     
     # Deployment configuration
-    st.subheader("🚀 Deployment Settings")
+    st.subheader("Deployment Settings")
     
     col1, col2, col3 = st.columns(3)
     
@@ -390,7 +390,8 @@ def render_deployment_tab():
             "Snowflake Horizon enabled?",
             options=[True, False],
             index=0 if global_config.get("horizon_enabled", True) else 1,
-            help="Enable Snowflake Horizon for governance and data quality"
+            help="Enable Snowflake Horizon for governance and data quality",
+            key="deployment_horizon_enabled"
         )
     
     with col2:
@@ -412,7 +413,7 @@ def render_deployment_tab():
     st.divider()
     
     # Pipeline deployment options
-    st.subheader("⚙️ Pipeline Deployment Options")
+    st.subheader("Pipeline Deployment Options")
     
     col1, col2 = st.columns(2)
     
@@ -445,7 +446,7 @@ def render_deployment_tab():
     st.divider()
     
     # Pipeline naming and environment
-    st.subheader("🏷️ Pipeline Naming")
+    st.subheader("Pipeline Naming")
     
     col1, col2, col3 = st.columns(3)
     
@@ -475,19 +476,19 @@ def render_deployment_tab():
     st.divider()
     
     # Deployment actions
-    st.subheader("🎯 Deployment Actions")
+    st.subheader("Deployment Actions")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🥉 Deploy Bronze Layer", type="primary", use_container_width=True):
+        if st.button("Deploy Bronze Layer", type="primary", use_container_width=True):
             if not bronze_entries:
-                st.error("❌ No bronze entries configured!")
+                st.error("No bronze entries configured!")
             elif not pipeline_name:
-                st.error("❌ Pipeline name is required!")
+                st.error("Pipeline name is required!")
             else:
-                st.success(f"✅ Bronze layer deployment initiated for {len(bronze_entries)} entries!")
-                st.info(f"📊 Pipeline: {pipeline_name} | Database: {database_name} | Group: {bronze_group_name}")
+                st.success(f"Bronze layer deployment initiated for {len(bronze_entries)} entries!")
+                st.info(f"Pipeline: {pipeline_name} | Database: {database_name} | Group: {bronze_group_name}")
                 
                 # Show bronze deployment details
                 with st.expander("Bronze Deployment Details", expanded=True):
@@ -506,14 +507,14 @@ def render_deployment_tab():
                     st.json(bronze_deployment)
     
     with col2:
-        if st.button("🥈 Deploy Silver Layer", type="primary", use_container_width=True):
+        if st.button("Deploy Silver Layer", type="primary", use_container_width=True):
             if not silver_entries:
-                st.error("❌ No silver entries configured!")
+                st.error("No silver entries configured!")
             elif not pipeline_name:
-                st.error("❌ Pipeline name is required!")
+                st.error("Pipeline name is required!")
             else:
-                st.success(f"✅ Silver layer deployment initiated for {len(silver_entries)} entries!")
-                st.info(f"📊 Pipeline: {pipeline_name} | Database: {database_name} | Group: {silver_group_name}")
+                st.success(f"Silver layer deployment initiated for {len(silver_entries)} entries!")
+                st.info(f"Pipeline: {pipeline_name} | Database: {database_name} | Group: {silver_group_name}")
                 
                 # Show silver deployment details
                 with st.expander("Silver Deployment Details", expanded=True):
@@ -532,14 +533,14 @@ def render_deployment_tab():
                     st.json(silver_deployment)
     
     with col3:
-        if st.button("🚀 Deploy Complete Pipeline", type="primary", use_container_width=True):
+        if st.button("Deploy Complete Pipeline", type="primary", use_container_width=True):
             if not pipeline_name:
-                st.error("❌ Pipeline name is required!")
+                st.error("Pipeline name is required!")
             elif not bronze_entries and not silver_entries:
-                st.error("❌ No pipeline entries configured!")
+                st.error("No pipeline entries configured!")
             else:
-                st.success("✅ Complete pipeline deployment initiated!")
-                st.info(f"📊 Pipeline: {pipeline_name} | Database: {database_name}")
+                st.success("Complete pipeline deployment initiated!")
+                st.info(f"Pipeline: {pipeline_name} | Database: {database_name}")
                 
                 # Show complete deployment details
                 with st.expander("Complete Pipeline Deployment", expanded=True):
@@ -563,8 +564,8 @@ def render_deployment_tab():
     st.divider()
     
     # SQL Generation
-    if st.button("📝 Generate Deployment SQL", use_container_width=True):
-        st.subheader("🔧 Generated SQL Commands")
+    if st.button("Generate Deployment SQL", use_container_width=True):
+        st.subheader("Generated SQL Commands")
         
         # Bronze layer SQL
         if bronze_entries:
@@ -612,6 +613,204 @@ INSERT INTO {database_name}.SNOWMETA_CONFIG.{bronze_table_name} VALUES
         
         control_sql = control_sql.rstrip(",\n") + ";"
         st.code(control_sql, language="sql")
+
+
+def render_monitoring_tab():
+    """Render the monitoring tab for task status"""
+    st.header("Step 3: Monitoring")
+    st.markdown("Monitor the status of your Snowflake tasks and pipelines")
+    
+    if not st.session_state.onboarding_complete:
+        st.warning("Please complete the Pipeline Configuration step first before monitoring.")
+        return
+    
+    # Database and warehouse selection for monitoring
+    st.subheader("Monitoring Configuration")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        monitor_database = st.text_input(
+            "Database:",
+            value="ANALYTICS",
+            help="Database containing your pipelines",
+            key="monitor_database"
+        )
+    
+    with col2:
+        monitor_warehouse = st.selectbox(
+            "Warehouse:",
+            options=["COMPUTE_WH", "SNOWFLAKE_LEARNING_WH", "SNOW_COMPUTE", "TRANSFORMING"],
+            index=3,
+            help="Warehouse to monitor",
+            key="monitor_warehouse"
+        )
+    
+    with col3:
+        refresh_interval = st.selectbox(
+            "Refresh Interval:",
+            options=["30 seconds", "1 minute", "5 minutes", "10 minutes"],
+            index=1,
+            help="How often to refresh monitoring data",
+            key="refresh_interval"
+        )
+    
+    st.divider()
+    
+    # Task monitoring section
+    st.subheader("Task Status Monitoring")
+    
+    # Create tabs for different monitoring views
+    monitor_tab1, monitor_tab2, monitor_tab3 = st.tabs(["Task History", "Stream Status", "Pipeline Health"])
+    
+    with monitor_tab1:
+        st.markdown("### Task Execution History")
+        
+        if st.button("Refresh Task History", key="refresh_tasks"):
+            # Simulate task history data
+            task_history_data = [
+                {
+                    "Task Name": "bronze_ingestion_task",
+                    "Status": "SUCCEEDED",
+                    "Start Time": "2024-01-15 10:30:00",
+                    "End Time": "2024-01-15 10:32:15",
+                    "Duration": "2m 15s",
+                    "Records Processed": "15,432"
+                },
+                {
+                    "Task Name": "silver_transformation_task",
+                    "Status": "SUCCEEDED", 
+                    "Start Time": "2024-01-15 10:32:15",
+                    "End Time": "2024-01-15 10:35:42",
+                    "Duration": "3m 27s",
+                    "Records Processed": "15,432"
+                },
+                {
+                    "Task Name": "bronze_ingestion_task",
+                    "Status": "FAILED",
+                    "Start Time": "2024-01-15 09:30:00",
+                    "End Time": "2024-01-15 09:31:05",
+                    "Duration": "1m 5s",
+                    "Error": "Connection timeout"
+                }
+            ]
+            
+            import pandas as pd
+            df = pd.DataFrame(task_history_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # Show task status summary
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Tasks", "3")
+            with col2:
+                st.metric("Successful", "2", "1")
+            with col3:
+                st.metric("Failed", "1", "-1")
+            with col4:
+                st.metric("Success Rate", "67%")
+    
+    with monitor_tab2:
+        st.markdown("### Stream Status")
+        
+        if st.button("Refresh Stream Status", key="refresh_streams"):
+            # Simulate stream status data
+            stream_data = [
+                {
+                    "Stream Name": "bronze_banks_stream",
+                    "Table": "ANALYTICS.FINANCIAL_BRONZE.Banks_2022_2023",
+                    "Status": "ACTIVE",
+                    "Records": "15,432",
+                    "Last Modified": "2024-01-15 10:32:15"
+                },
+                {
+                    "Stream Name": "bronze_insurance_stream", 
+                    "Table": "ANALYTICS.FINANCIAL_BRONZE.Insurance_2022_2023",
+                    "Status": "ACTIVE",
+                    "Records": "8,921",
+                    "Last Modified": "2024-01-15 10:32:15"
+                },
+                {
+                    "Stream Name": "silver_banks_stream",
+                    "Table": "ANALYTICS.FINANCIAL_SILVER.Banks_2022_2023", 
+                    "Status": "ACTIVE",
+                    "Records": "15,432",
+                    "Last Modified": "2024-01-15 10:35:42"
+                }
+            ]
+            
+            import pandas as pd
+            df = pd.DataFrame(stream_data)
+            st.dataframe(df, use_container_width=True)
+    
+    with monitor_tab3:
+        st.markdown("### Pipeline Health Dashboard")
+        
+        if st.button("Refresh Pipeline Health", key="refresh_health"):
+            # Pipeline health metrics
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### Bronze Layer Health")
+                st.metric("Data Freshness", "2 hours", "1 hour")
+                st.metric("Processing Time", "2m 15s", "30s")
+                st.metric("Error Rate", "0.5%", "-0.2%")
+                
+                # Health status indicators
+                st.markdown("**Status Indicators:**")
+                st.success("Data Ingestion: Healthy")
+                st.success("Schema Validation: Passed")
+                st.warning("Data Quality: 1 warning")
+            
+            with col2:
+                st.markdown("#### Silver Layer Health")
+                st.metric("Transformation Time", "3m 27s", "45s")
+                st.metric("CDC Processing", "100%", "5%")
+                st.metric("Data Quality Score", "98.5%", "2.1%")
+                
+                # Health status indicators
+                st.markdown("**Status Indicators:**")
+                st.success("CDC Processing: Healthy")
+                st.success("Data Quality: Excellent")
+                st.success("Schema Evolution: Compatible")
+    
+    st.divider()
+    
+    # Alert configuration
+    st.subheader("Alert Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Task Failure Alerts")
+        task_failure_alert = st.checkbox("Enable task failure alerts", value=True)
+        if task_failure_alert:
+            st.text_input("Alert Email:", placeholder="admin@company.com")
+            st.selectbox("Alert Frequency:", ["Immediate", "Every 5 minutes", "Every 15 minutes"])
+    
+    with col2:
+        st.markdown("#### Performance Alerts")
+        performance_alert = st.checkbox("Enable performance alerts", value=True)
+        if performance_alert:
+            st.number_input("Processing Time Threshold (minutes):", value=10, min_value=1, max_value=60)
+            st.number_input("Error Rate Threshold (%):", value=5.0, min_value=0.1, max_value=50.0)
+    
+    # Monitoring actions
+    st.subheader("Monitoring Actions")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("Start All Tasks", key="start_tasks"):
+            st.success("All tasks started successfully!")
+    
+    with col2:
+        if st.button("Stop All Tasks", key="stop_tasks"):
+            st.warning("All tasks stopped!")
+    
+    with col3:
+        if st.button("Reset Failed Tasks", key="reset_tasks"):
+            st.info("Failed tasks reset and queued for retry!")
 
 
 def render_demo_tab():
@@ -698,152 +897,24 @@ def render_demo_tab():
     """)
 
 
-def render_cli_tab():
-    """Render the CLI commands tab"""
-    st.header("CLI Commands")
-    st.markdown("### Command Line Interface Reference")
-    
-    st.markdown("""
-    #### Installation
-    
-    Install Snowflake-META using pip:
-    """)
-    
-    st.code("""
-pip install snowflake-connector-python
-pip install snowflake-snowpark-python
-# Clone and install snow-meta
-git clone <repository-url>
-cd snow-meta
-pip install -e .
-    """, language="bash")
-    
-    st.divider()
-    
-    st.markdown("""
-    #### Onboarding via CLI
-    
-    Run onboarding from the command line:
-    """)
-    
-    onboarding_command = """
-python -c "
-from snowflake.snowpark import Session
-from src.onboard_controltable import OnboardControlTable
-
-# Create Snowflake session
-session = Session.builder.configs({
-    'account': '<account>',
-    'user': '<user>',
-    'password': '<password>',
-    'warehouse': '<warehouse>',
-    'database': '<database>',
-    'schema': '<schema>'
-}).create()
-
-# Configure onboarding
-params = {
-    'onboarding_file_path': '@MY_STAGE/configs/onboarding.json',
-    'database': 'ANALYTICS',
-    'schema': 'SNOWMETA_CONFIG',
-    'bronze_control_table': 'bronze_dataflowspec',
-    'silver_control_table': 'silver_dataflowspec',
-    'env': 'prod',
-    'version': 'v1',
-    'import_author': 'cli-user',
-    'overwrite': True
-}
-
-# Run onboarding
-onboard = OnboardControlTable(session, params, horizon_enabled=True)
-onboard.onboard_controltable_specs()
-"
-    """
-    
-    st.code(onboarding_command, language="python")
-    
-    st.divider()
-    
-    st.markdown("""
-    #### Deployment via CLI
-    
-    Deploy pipelines using Snowflake Tasks and Streams:
-    """)
-    
-    deployment_command = """
-# Create a Snowflake task for bronze layer ingestion
-CREATE OR REPLACE TASK bronze_ingestion_task
-    WAREHOUSE = COMPUTE_WH
-    SCHEDULE = 'USING CRON 0 * * * * UTC'
-AS
-    CALL bronze_ingestion_procedure();
-
-# Create a stream on bronze table
-CREATE OR REPLACE STREAM bronze_stream ON TABLE ANALYTICS.SNOWMETA_BRONZE.users;
-
-# Create a task for silver layer transformation
-CREATE OR REPLACE TASK silver_transform_task
-    WAREHOUSE = COMPUTE_WH
-    AFTER bronze_ingestion_task
-    WHEN SYSTEM$STREAM_HAS_DATA('bronze_stream')
-AS
-    CALL silver_transformation_procedure();
-
-# Start the tasks
-ALTER TASK silver_transform_task RESUME;
-ALTER TASK bronze_ingestion_task RESUME;
-    """
-    
-    st.code(deployment_command, language="sql")
-    
-    st.divider()
-    
-    st.markdown("""
-    #### Monitoring & Troubleshooting
-    
-    Monitor your pipelines:
-    """)
-    
-    monitoring_commands = """
--- Check task history
-SELECT * FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY())
-WHERE NAME = 'bronze_ingestion_task'
-ORDER BY SCHEDULED_TIME DESC
-LIMIT 10;
-
--- Check stream status
-SHOW STREAMS IN SCHEMA ANALYTICS.SNOWMETA_BRONZE;
-
--- View control table contents
-SELECT * FROM ANALYTICS.SNOWMETA_CONFIG.bronze_dataflowspec;
-SELECT * FROM ANALYTICS.SNOWMETA_CONFIG.silver_dataflowspec;
-    """
-    
-    st.code(monitoring_commands, language="sql")
-
-
 def main():
     """Main application entry point"""
     render_header()
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs(["UI", "Demo", "CLI"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Pipeline Configuration", "Deployment", "Monitoring", "Demo"])
     
     with tab1:
-        # Create subtabs for onboarding and deployment
-        subtab1, subtab2 = st.tabs(["Step 1: Onboarding", "Step 2: Deployment"])
-        
-        with subtab1:
-            render_onboarding_tab()
-        
-        with subtab2:
-            render_deployment_tab()
+        render_onboarding_tab()
     
     with tab2:
-        render_demo_tab()
+        render_deployment_tab()
     
     with tab3:
-        render_cli_tab()
+        render_monitoring_tab()
+    
+    with tab4:
+        render_demo_tab()
     
     # Sidebar
     with st.sidebar:
@@ -901,4 +972,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
