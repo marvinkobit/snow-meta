@@ -186,6 +186,8 @@ class ControlTableReader:
         columns_sql = ',\n'.join(columns)
         create_table_sql = f"""CREATE TABLE IF NOT EXISTS {table_name} (
                             {columns_sql}
-                            );"""
+                            );
+                            
+                            CREATE OR REPLACE STREAM stream_{table_name} ON TABLE {table_name};"""
         
         return create_table_sql      

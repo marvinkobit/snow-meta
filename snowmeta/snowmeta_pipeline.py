@@ -93,9 +93,11 @@ class SnowmetaPipeline:
                         _SRC_FILENAME VARCHAR,
                         _SRC_FILE_ROW_NUMBER VARCHAR,
                         _RECEIVED_TIMESTAMP TIMESTAMP_NTZ,
-                        _INGEST_TIMESTAMP TIMESTAMP_NTZ,
+                        _INGEST_TIMESTAMP TIMESTAMP_NTZ
                        
                     );
+
+                    CREATE OR REPLACE STREAM {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
 
                      """
                 procedure_body += f"""
@@ -135,6 +137,10 @@ class SnowmetaPipeline:
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGEST_TIMESTAMP TIMESTAMP_NTZ;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _RECEIVED_TIMESTAMP TIMESTAMP_NTZ;
+
+
+                    CREATE OR REPLACE STREAM {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
+
                     """
                 procedure_body += f"""
                 -- Copy data into table
@@ -544,6 +550,8 @@ class SnowmetaPipeline:
         
         key_columns = cdc_config["keys"]
         sequence_by_column = cdc_config["sequence_by"]
+        track_history_column_list = cdc_config.get("track_history_column_list", [])
+        track_history_except_column_list = cdc_config.get("track_history_except_column_list", [])
         except_columns = cdc_config.get("except_column_list", [])
         
         # Quote identifiers
