@@ -467,8 +467,8 @@ class SnowmetaPipeline:
         
         key_columns = cdc_config["keys"]
         sequence_by_column = cdc_config["sequence_by"]
-        track_history_column_list = cdc_config.get("track_history_column_list", [])
-        track_history_except_column_list = cdc_config.get("track_history_except_column_list", [])
+        track_history_column_list = cdc_config.get("columns_to_track", [])
+        track_history_except_column_list = cdc_config.get("except_column_list", [])
         except_columns = cdc_config.get("except_column_list", [])
         
         # Quote identifiers
@@ -482,8 +482,11 @@ class SnowmetaPipeline:
         procedure_name = f"SP_UPSERT_SCD2_{silver_table.upper()}"
         
         # Prepare list of excluded columns for dynamic SQL generation
-        excluded_cols_list = except_columns + ['VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'RN']
+        excluded_cols_list = except_columns + ['VALID_FROM', 'VALID_TO', 'IS_CURRENT', 'OPERATION', 'RN']
         excluded_cols_sql = ', '.join([f"'{col.upper()}'" for col in excluded_cols_list])
+
+        # Precompute tracked change expression text if provided
+        tracked_change_expr = ' OR '.join([f'target."{c.upper()}" IS DISTINCT FROM source."{c.upper()}"' for c in track_history_column_list]) if track_history_column_list else ''
 
         sql_procedure = f"""
                             CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
@@ -497,78 +500,82 @@ class SnowmetaPipeline:
                                 select_columns_list VARCHAR;
                                 update_conditions VARCHAR;
                             BEGIN
-                                -- Create temporary deduped source table
-                                CREATE OR REPLACE VIEW {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS
+                                -- Step 1: Create deduplicated source from STREAM with latest by key
+                                CREATE OR REPLACE TEMP TABLE deduped_source AS
                                 SELECT *
                                 FROM (
                                     SELECT *,
-                                            ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
-                                    FROM {bronze_database}.{bronze_schema}.{bronze_table}
+                                           ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
+                                    FROM {bronze_database}.{bronze_schema}.STREAM_{bronze_table}
                                 )
                                 WHERE rn = 1;
 
-                                -- Create silver table if it doesn't exist (schema only, no data)
+                                -- Ensure silver table exists with SCD2 columns
                                 CREATE TABLE IF NOT EXISTS {silver_database}.{silver_schema}.{silver_table}
                                 AS
                                 SELECT
                                     *,
                                     CAST(CURRENT_TIMESTAMP() AS TIMESTAMP_NTZ) AS VALID_FROM,
                                     CAST(NULL AS TIMESTAMP_NTZ) AS VALID_TO,
-                                    TRUE AS IS_CURRENT
-                                FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table}
+                                    TRUE AS IS_CURRENT,
+                                    CAST(NULL AS STRING) AS OPERATION
+                                FROM deduped_source
                                 WHERE 1=0;
 
-                                -- Get column list dynamically for the INSERT INTO target list (unprefixed)
+                                -- Build dynamic column lists for inserts (exclude SCD2/except columns)
                                 SELECT LISTAGG('"' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
                                 INTO :columns_list
                                 FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
                                 WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
-                                AND TABLE_NAME = '{silver_table.upper()}'
-                                AND COLUMN_NAME NOT IN ({excluded_cols_sql})
-                                ;
+                                  AND TABLE_NAME = '{silver_table.upper()}'
+                                  AND COLUMN_NAME NOT IN ({excluded_cols_sql});
 
-                                -- Get column list dynamically for the SELECT statement (prefixed with 'source.')
                                 SELECT LISTAGG('source."' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
                                 INTO :select_columns_list
                                 FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
                                 WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
-                                AND TABLE_NAME = '{silver_table.upper()}'
-                                AND COLUMN_NAME NOT IN ({excluded_cols_sql})
-                                ;
+                                  AND TABLE_NAME = '{silver_table.upper()}'
+                                  AND COLUMN_NAME NOT IN ({excluded_cols_sql});
 
-                                -- Build update conditions for detecting changes (Exclude Key, SCD2 fields, and excluded cols)
-                                SELECT LISTAGG('target."' || COLUMN_NAME || '" IS DISTINCT FROM source."' || COLUMN_NAME || '"', ' OR ')
-                                INTO :update_conditions
-                                FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
-                                WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
-                                AND TABLE_NAME = '{silver_table.upper()}'
-                                AND COLUMN_NAME NOT IN ('{key_column.upper()}', {excluded_cols_sql})
-                                ;
+                                -- Compute change detection predicate
+                                {"SET update_conditions := '" + tracked_change_expr.replace("'", "''") + "';" if tracked_change_expr else ''}
+                                {"SELECT LISTAGG('target.\"' || COLUMN_NAME || '\" IS DISTINCT FROM source.\"' || COLUMN_NAME || '\"', ' OR ') INTO :update_conditions FROM " + silver_database + ".INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '" + silver_schema.upper() + "' AND TABLE_NAME = '" + silver_table.upper() + "' AND COLUMN_NAME NOT IN ('" + key_column.upper() + "', " + excluded_cols_sql + ");" if not tracked_change_expr else ''}
 
-                                -- Expire existing records where changes are detected
+                                -- Step 2: MERGE - expire changed current rows and insert brand new keys (dynamic)
                                 EXECUTE IMMEDIATE '
-                                UPDATE {silver_database}.{silver_schema}.{silver_table} AS target
-                                SET VALID_TO = CURRENT_TIMESTAMP(),
-                                    IS_CURRENT = FALSE
-                                FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
-                                WHERE target.{key_column_quoted} = source.{key_column_quoted}
-                                AND target.IS_CURRENT = TRUE
-                                AND (' || :update_conditions || ')
+                                  MERGE INTO {silver_database}.{silver_schema}.{silver_table} AS target
+                                  USING deduped_source AS source
+                                  ON target.{key_column_quoted} = source.{key_column_quoted} AND target.IS_CURRENT = TRUE
+                                  WHEN MATCHED AND (' || :update_conditions || ') THEN
+                                    UPDATE SET
+                                      VALID_TO = CURRENT_TIMESTAMP(),
+                                      IS_CURRENT = FALSE,
+                                      OPERATION = ''Expired''
+                                  WHEN NOT MATCHED THEN
+                                    INSERT (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT, OPERATION)
+                                    VALUES (' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE, ''Newly_Inserted'')
                                 ';
 
-                                -- Insert new and changed records
+                                -- Step 3: Insert new versions for changed records (dynamic)
                                 EXECUTE IMMEDIATE '
-                                INSERT INTO {silver_database}.{silver_schema}.{silver_table} (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT)
-                                SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE
-                                FROM {bronze_database}.{bronze_schema}.deduped_{bronze_table} AS source
-                                LEFT JOIN {silver_database}.{silver_schema}.{silver_table} AS target
+                                  INSERT INTO {silver_database}.{silver_schema}.{silver_table} (' || :columns_list || ', VALID_FROM, VALID_TO, IS_CURRENT, OPERATION)
+                                  SELECT ' || :select_columns_list || ', CURRENT_TIMESTAMP(), NULL, TRUE, ''Updated''
+                                  FROM deduped_source AS source
+                                  LEFT JOIN {silver_database}.{silver_schema}.{silver_table} AS target
                                     ON source.{key_column_quoted} = target.{key_column_quoted} AND target.IS_CURRENT = TRUE
-                                WHERE
-                                    target.{key_column_quoted} IS NULL
-                                    OR (' || :update_conditions || ')
+                                  WHERE ' || :update_conditions || '
                                 ';
 
-                                RETURN 'SCD2 upsert complete for {silver_table.upper()}';
+                                -- Step 4: Soft delete rows not present in source
+                                UPDATE {silver_database}.{silver_schema}.{silver_table} AS target
+                                SET
+                                    VALID_TO = CURRENT_TIMESTAMP(),
+                                    IS_CURRENT = FALSE,
+                                    OPERATION = 'Soft_Delete'
+                                WHERE target.IS_CURRENT = TRUE
+                                  AND target.{key_column_quoted} NOT IN (SELECT {key_column_quoted} FROM deduped_source);
+
+                                RETURN 'SCD2 upsert complete with operation logging';
                             END;
                             $$;
                             """
