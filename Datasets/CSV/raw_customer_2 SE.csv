@@ -1,0 +1,7 @@
+phone,mktsegment,name,address,acctbal,nationkey,comment,customer_id,age
+555-1234,BUILDING,John Doe,123 Main St,1500.5,3,First customer,1,20
+555-5678,AUTOMOBILE,Jane Smith,456 Oak Ave,2100,5,Regular buyer,2,24
+555-9101,FURNITURE,Mike Johnson,789 Pine Rd,980.75,7,Loyal member,3,44
+555-1122,BUILDING,Sarah Lee,321 Birch Ln,1200,4,New client,4,19
+555-3344,MACHINERY,Tom Green,654 Cedar St,1340.3,2,Long-term partner,5,31
+237-7616,BUILDING,Hanif,789 bole,123.12,1,New client,6,55

@@ -1,0 +1,200 @@
+[
+  {
+    "product_id": "P1001",
+    "product_details": {
+      "name": "Wireless Earbuds",
+      "brand": "TechAudio"
+    },
+    "price": {
+      "base": 79.99,
+      "discount": 5.99
+    },
+    "shipping": {
+      "method": "Standard",
+      "cost": 4.99,
+      "estimated_days": 5
+    },
+    "in_stock": true,
+    "last_updated": "2023-09-15T14:30:00Z"
+  },
+  {
+    "product_id": "P1002",
+    "product_details": {
+      "name": "Smartwatch",
+      "brand": "TimeSync"
+    },
+    "price": {
+      "base": 149.99,
+      "discount": 20.00
+    },
+    "shipping": {
+      "method": "Express",
+      "cost": 7.99,
+      "estimated_days": 2
+    },
+    "in_stock": true,
+    "last_updated": "2023-09-18T09:45:00Z"
+  },
+  {
+    "product_id": "P1003",
+    "product_details": {
+      "name": "Bluetooth Speaker",
+      "brand": "SoundWave"
+    },
+    "price": {
+      "base": 59.99,
+      "discount": 10.00
+    },
+    "shipping": {
+      "method": "Standard",
+      "cost": 5.99,
+      "estimated_days": 6
+    },
+    "in_stock": false,
+    "last_updated": "2023-09-22T11:10:00Z"
+  },
+  {
+    "product_id": "P1004",
+    "product_details": {
+      "name": "4K Monitor",
+      "brand": "VisualEdge"
+    },
+    "price": {
+      "base": 299.99,
+      "discount": 25.00
+    },
+    "shipping": {
+      "method": "Freight",
+      "cost": 19.99,
+      "estimated_days": 7
+    },
+    "in_stock": true,
+    "last_updated": "2023-09-25T15:00:00Z"
+  },
+  {
+    "product_id": "P1005",
+    "product_details": {
+      "name": "Gaming Mouse",
+      "brand": "ClickPro"
+    },
+    "price": {
+      "base": 49.99,
+      "discount": 5.00
+    },
+    "shipping": {
+      "method": "Express",
+      "cost": 6.99,
+      "estimated_days": 3
+    },
+    "in_stock": true,
+    "last_updated": "2023-09-28T12:20:00Z"
+  },
+  {
+    "product_id": "P1006",
+    "product_details": {
+      "name": "Mechanical Keyboard",
+      "brand": "KeyMaster"
+    },
+    "price": {
+      "base": 89.99,
+      "discount": 15.00
+    },
+    "shipping": {
+      "method": "Standard",
+      "cost": 5.99,
+      "estimated_days": 4
+    },
+    "in_stock": false,
+    "last_updated": "2023-10-01T10:05:00Z"
+  },
+  {
+    "product_id": "P1007",
+    "product_details": {
+      "name": "Noise Cancelling Headphones",
+      "brand": "QuietTune"
+    },
+    "price": {
+      "base": 199.99,
+      "discount": 30.00
+    },
+    "shipping": {
+      "method": "Express",
+      "cost": 8.99,
+      "estimated_days": 2
+    },
+    "in_stock": true,
+    "last_updated": "2023-10-03T17:50:00Z"
+  },
+  {
+    "product_id": "P1008",
+    "product_details": {
+      "name": "Portable Charger",
+      "brand": "PowerGo"
+    },
+    "price": {
+      "base": 39.99,
+      "discount": 8.00
+    },
+    "shipping": {
+      "method": "Standard",
+      "cost": 4.49,
+      "estimated_days": 5
+    },
+    "in_stock": true,
+    "last_updated": "2023-10-06T08:00:00Z"
+  },
+  {
+    "product_id": "P1009",
+    "product_details": {
+      "name": "Laptop Stand",
+      "brand": "ErgoLift"
+    },
+    "price": {
+      "base": 29.99,
+      "discount": 3.00
+    },
+    "shipping": {
+      "method": "Economy",
+      "cost": 2.99,
+      "estimated_days": 8
+    },
+    "in_stock": true,
+    "last_updated": "2023-10-08T13:45:00Z"
+  },
+  {
+    "product_id": "P1010",
+    "product_details": {
+      "name": "External SSD",
+      "brand": "DataVault"
+    },
+    "price": {
+      "base": 119.99,
+      "discount": 10.00
+    },
+    "shipping": {
+      "method": "Express",
+      "cost": 7.49,
+      "estimated_days": 2
+    },
+    "in_stock": false,
+    "last_updated": "2023-10-12T16:30:00Z"
+  },
+  {
+    "product_id": "P1011",
+    "product_details": {
+      "name": "Smart Home Hub",
+      "brand": "HomeIQ"
+    },
+    "price": {
+      "base": 99.99,
+      "discount": 12.00
+    },
+    "shipping": {
+      "method": "Standard",
+      "cost": 5.49,
+      "estimated_days": 4
+    },
+    "in_stock": true,
+    "last_updated": "2023-10-14T20:15:00Z"
+  }
+]

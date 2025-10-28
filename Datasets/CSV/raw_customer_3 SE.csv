@@ -1,0 +1,7 @@
+nationkey,acctbal,age,address,name,mktsegment,customer_id,phone
+3,1500.5,20,123 Main St,John Doe,BUILDING,1,555-1234
+5,2100,24,456 Oak Ave,Jane Smith,AUTOMOBILE,2,555-5678
+7,980.75,44,789 Pine Rd,Mike Johnson,FURNITURE,3,555-9101
+4,1200,19,321 Birch Ln,Sarah Lee,BUILDING,4,555-1122
+2,1340.3,31,654 Cedar St,Tom Green,MACHINERY,5,555-3344
+1,123.12,55,789 bole,Hanif,BUILDING,6,237-7616
