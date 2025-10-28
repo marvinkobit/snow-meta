@@ -188,7 +188,9 @@ class ControlTableReader:
                             {columns_sql}
                             );
                             
-                            CREATE OR REPLACE STREAM stream_{table_name} ON TABLE {table_name};
+                            ALTER TABLE {table_name} SET ENABLE_SCHEMA_EVOLUTION = TRUE; 
+
+                            CREATE STREAM IF NOT EXISTS stream_{table_name} ON TABLE {table_name};
                             """
         
         return create_table_sql      

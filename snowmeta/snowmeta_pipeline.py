@@ -99,7 +99,7 @@ class SnowmetaPipeline:
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
 
-                    CREATE OR REPLACE STREAM {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
+                    CREATE STREAM IF NOT EXISTS {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
 
                      """
                 procedure_body += f"""
@@ -142,7 +142,7 @@ class SnowmetaPipeline:
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
 
-                    CREATE OR REPLACE STREAM {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
+                    CREATE STREAM IF NOT EXISTS {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
 
                     """
                 procedure_body += f"""
@@ -396,7 +396,7 @@ class SnowmetaPipeline:
             f't."{col.upper()}" = s."{col.upper()}"' for col in columns_to_track
         ]) if columns_to_track else ""
 
-        # Compose the SQL for the procedure using dedupe, targeted SCD1 update, insert-by-name, and soft delete
+        # Compose the SQL for the procedure using dedupe, targeted SCD1 update, dynamic insert-by-list, and soft delete
         sql_procedure = f"""
                         CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
                         RETURNS VARCHAR
@@ -404,6 +404,9 @@ class SnowmetaPipeline:
                         EXECUTE AS OWNER
                         AS
                         $$
+                        DECLARE
+                          columns_list VARCHAR;
+                          select_columns_list VARCHAR;
                         BEGIN
                          
                           CREATE OR REPLACE TEMP TABLE deduped_source AS
@@ -414,22 +417,50 @@ class SnowmetaPipeline:
                                 FROM {bronze_database}.{bronze_schema}.STREAM_{bronze_table}
                             )
                             WHERE rn = 1;
-                         
-                          MERGE INTO {silver_database}.{silver_schema}.{silver_table.upper()} AS t
-                          USING deduped_source AS s
-                          ON t.{key_column_quoted} = s.{key_column_quoted}
-                          
-                          WHEN MATCHED AND (
-                              {change_predicate}
-                          )
-                          THEN UPDATE SET
-                              {update_set_list}{"," if update_set_list else ""}
-                              t."_INGEST_TIMESTAMP" = s."_INGEST_TIMESTAMP",
-                              t."OPERATION" = 'UPDATED'
-                          
-                          WHEN NOT MATCHED THEN INSERT
-                              ALL BY NAME;
-                         
+
+                           CREATE TABLE IF NOT EXISTS {silver_database}.{silver_schema}.{silver_table}
+                                AS
+                                SELECT
+                                    *,
+                                    CAST(NULL AS STRING) AS OPERATION
+                                FROM deduped_source
+                                WHERE 1=0;
+
+                          -- Build dynamic column lists for INSERT (exclude OPERATION)
+                          SELECT LISTAGG('"' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+                          INTO :columns_list
+                          FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
+                          WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
+                            AND TABLE_NAME = '{silver_table.upper()}'
+                            AND COLUMN_NAME <> 'OPERATION';
+
+                          SELECT LISTAGG('s."' || COLUMN_NAME || '"', ', ') WITHIN GROUP (ORDER BY ORDINAL_POSITION)
+                          INTO :select_columns_list
+                          FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS
+                          WHERE TABLE_SCHEMA = '{silver_schema.upper()}'
+                            AND TABLE_NAME = '{silver_table.upper()}'
+                            AND COLUMN_NAME <> 'OPERATION';
+
+                          -- Dynamic MERGE with explicit INSERT column list like the attached SQL
+                          EXECUTE IMMEDIATE '
+                            MERGE INTO {silver_database}.{silver_schema}.{silver_table.upper()} AS t
+                            USING deduped_source AS s
+                            ON t.{key_column_quoted} = s.{key_column_quoted}
+                            
+                            WHEN MATCHED AND (
+                                {change_predicate}
+                            )
+                            THEN UPDATE SET
+                                {update_set_list}{"," if update_set_list else ""}
+                                t."_INGEST_TIMESTAMP" = s."_INGEST_TIMESTAMP",
+                                t."OPERATION" = ''UPDATED''
+                            
+                            WHEN NOT MATCHED THEN INSERT
+                                (' || :columns_list || ', "OPERATION")
+                            VALUES
+                                (' || :select_columns_list || ', ''INSERTED'')
+                          ';
+
                           UPDATE {silver_database}.{silver_schema}.{silver_table.upper()} t
                           SET t."OPERATION" = 'SOFT_DELETED',
                               t."_INGEST_TIMESTAMP" = CURRENT_TIMESTAMP()
@@ -488,6 +519,20 @@ class SnowmetaPipeline:
         # Precompute tracked change expression text if provided
         tracked_change_expr = ' OR '.join([f'target."{c.upper()}" IS DISTINCT FROM source."{c.upper()}"' for c in track_history_column_list]) if track_history_column_list else ''
 
+        # Build the SQL snippet to compute :update_conditions (precompute to avoid complex f-string expressions)
+        if tracked_change_expr:
+            escaped = tracked_change_expr.replace("'", "''")
+            change_conditions_expr_sql = f"SET update_conditions := '{escaped}';"
+        else:
+            change_conditions_expr_sql = (
+                "SELECT LISTAGG('target.\"' || COLUMN_NAME || '\" IS DISTINCT FROM source.\"' || COLUMN_NAME || '\"', ' OR ') "
+                "INTO :update_conditions "
+                f"FROM {silver_database}.INFORMATION_SCHEMA.COLUMNS "
+                f"WHERE TABLE_SCHEMA = '{silver_schema.upper()}' "
+                f"AND TABLE_NAME = '{silver_table.upper()}' "
+                f"AND COLUMN_NAME NOT IN ('{key_column.upper()}', {excluded_cols_sql});"
+            )
+
         sql_procedure = f"""
                             CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{procedure_name}()
                             RETURNS VARCHAR
@@ -538,8 +583,7 @@ class SnowmetaPipeline:
                                   AND COLUMN_NAME NOT IN ({excluded_cols_sql});
 
                                 -- Compute change detection predicate
-                                {"SET update_conditions := '" + tracked_change_expr.replace("'", "''") + "';" if tracked_change_expr else ''}
-                                {"SELECT LISTAGG('target.\"' || COLUMN_NAME || '\" IS DISTINCT FROM source.\"' || COLUMN_NAME || '\"', ' OR ') INTO :update_conditions FROM " + silver_database + ".INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '" + silver_schema.upper() + "' AND TABLE_NAME = '" + silver_table.upper() + "' AND COLUMN_NAME NOT IN ('" + key_column.upper() + "', " + excluded_cols_sql + ");" if not tracked_change_expr else ''}
+                                {change_conditions_expr_sql}
 
                                 -- Step 2: MERGE - expire changed current rows and insert brand new keys (dynamic)
                                 EXECUTE IMMEDIATE '
