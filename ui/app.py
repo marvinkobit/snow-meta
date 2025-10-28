@@ -22,6 +22,13 @@ if 'onboarding_complete' not in st.session_state:
     st.session_state.onboarding_complete = False
 if 'onboarding_data' not in st.session_state:
     st.session_state.onboarding_data = {}
+if 'account_config' not in st.session_state:
+    st.session_state.account_config = {
+        'account': '',
+        'user': '',
+        'password': '',
+        'warehouse': 'COMPUTE_WH'
+    }
 
 
 def render_header():
@@ -91,9 +98,16 @@ def render_onboarding_tab():
                 )
                 reader_format = st.selectbox(
                     "Reader Format:",
-                    options=["CSV", "PARQUET", "JSON", "AVRO", "ORC"],
+                    options=["CSV", "PARQUET", "JSON", "XML", "AVRO", "ORC"],
                     index=0,  # CSV as default
                     help="Data format for reading"
+                )
+                
+                # Add variant load field right below Reader Format
+                variant_load = st.checkbox(
+                    "Variant Load:",
+                    value=False,
+                    help="Enable variant loading for JSON/XML data"
                 )
             
             with col2:
@@ -111,6 +125,11 @@ def render_onboarding_tab():
                     "Bronze Table:",
                     placeholder="Banks_2022_2023",
                     help="Target table name for bronze layer"
+                )
+                variant_column_name = st.text_input(
+                    "Variant Column Name:",
+                    value="SRC_PRODUCTS",
+                    help="Name of the variant column for storing JSON/XML data"
                 )
         
         with silver_col:
@@ -134,11 +153,10 @@ def render_onboarding_tab():
                     placeholder="Banks_2022_2023",
                     help="Target table name for silver layer"
                 )
-                scd_type = st.selectbox(
-                    "SCD Type:",
-                    options=["1", "2", "3"],
-                    index=1,
-                    help="Slowly Changing Dimension type"
+                except_columns = st.text_input(
+                    "Except Columns (comma-separated):",
+                    value="Op,dmsTimestamp,_rescued_data",
+                    help="Columns to exclude from CDC"
                 )
             
             with col2:
@@ -152,10 +170,11 @@ def render_onboarding_tab():
                     value="bank_id",
                     help="Primary keys for CDC (comma-separated)"
                 )
-                except_columns = st.text_input(
-                    "Except Columns (comma-separated):",
-                    value="Op,dmsTimestamp,_rescued_data",
-                    help="Columns to exclude from CDC"
+                scd_type = st.selectbox(
+                    "SCD Type:",
+                    options=["1", "2", "3"],
+                    index=1,
+                    help="Slowly Changing Dimension type"
                 )
             
             # Additional CDC Configuration
@@ -173,6 +192,7 @@ def render_onboarding_tab():
                     value="",
                     help="Custom select expressions (comma-separated)"
                 )
+        
         
         # Single Add Entry Button
         if st.form_submit_button("Add Pipeline Entry", type="primary", use_container_width=True):
@@ -193,7 +213,9 @@ def render_onboarding_tab():
                     "reader_format": reader_format,
                     "bronze_database_dev": bronze_database_dev,
                     "bronze_schema": bronze_schema,
-                    "bronze_table": bronze_table
+                    "bronze_table": bronze_table,
+                    "variant_load": variant_load,
+                    "variant_column_name": variant_column_name
                 }
                 
                 # Create silver entry
@@ -950,6 +972,70 @@ def main():
                     st.markdown(f"... and {len(silver_entries) - 3} more")
         else:
             st.info("📋 No pipeline configuration completed yet")
+        
+        st.divider()
+        
+        # Account Session Config
+        st.markdown("### Account Session Config")
+        
+        # Show current session info
+        if st.session_state.account_config['account'] and st.session_state.account_config['user']:
+            st.success(f"**Connected as:** {st.session_state.account_config['user']}")
+            st.info(f"**Account:** {st.session_state.account_config['account']}")
+            st.info(f"**Warehouse:** {st.session_state.account_config['warehouse']}")
+        else:
+            st.warning("⚠️ No account configured")
+        
+        # Account configuration popup
+        if st.button("Configure Account", use_container_width=True):
+            st.session_state.show_account_config = True
+        
+        if st.session_state.get('show_account_config', False):
+            with st.expander("Account Configuration", expanded=True):
+                with st.form("account_config_form"):
+                    account = st.text_input(
+                        "Account:",
+                        value=st.session_state.account_config['account'],
+                        placeholder="your_account.snowflakecomputing.com",
+                        help="Your Snowflake account identifier"
+                    )
+                    user = st.text_input(
+                        "User:",
+                        value=st.session_state.account_config['user'],
+                        placeholder="your_username",
+                        help="Your Snowflake username"
+                    )
+                    password = st.text_input(
+                        "Password:",
+                        value=st.session_state.account_config['password'],
+                        type="password",
+                        placeholder="your_password",
+                        help="Your Snowflake password"
+                    )
+                    warehouse = st.selectbox(
+                        "Warehouse:",
+                        options=["COMPUTE_WH", "SNOWFLAKE_LEARNING_WH", "SNOW_COMPUTE", "TRANSFORMING"],
+                        index=0,
+                        help="Snowflake warehouse for execution"
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("Save Config", type="primary"):
+                            st.session_state.account_config = {
+                                'account': account,
+                                'user': user,
+                                'password': password,
+                                'warehouse': warehouse
+                            }
+                            st.session_state.show_account_config = False
+                            st.success("Account configuration saved!")
+                            st.rerun()
+                    
+                    with col2:
+                        if st.form_submit_button("Cancel"):
+                            st.session_state.show_account_config = False
+                            st.rerun()
         
         st.divider()
         
