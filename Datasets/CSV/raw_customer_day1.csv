@@ -1,0 +1,6 @@
+customer_id,name,address,nationkey,phone,acctbal,mktsegment,comment
+1,John Doe,123 Main St,3,555-1234,1500.5,BUILDING,First customer
+2,Jane Smith,456 Oak Ave,5,555-5678,2100,AUTOMOBILE,Regular buyer
+3,Mike Johnson,789 Pine Rd,7,555-9101,980.75,FURNITURE,Loyal member
+4,Sarah Lee,67 Croverfield St,4,555-1122,1200,BUILDING,Long-term partner
+6,Robert Kennedy,45 Jersey St,2,654-3344,1340.3,AUTOMOBILE,New client

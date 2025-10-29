@@ -414,7 +414,7 @@ class SnowmetaPipeline:
                             FROM (
                                 SELECT *,
                                         ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
-                                FROM {bronze_database}.{bronze_schema}.STREAM_{bronze_table}
+                                FROM {bronze_database}.{bronze_schema}.{bronze_table}
                             )
                             WHERE rn = 1;
 
@@ -545,13 +545,13 @@ class SnowmetaPipeline:
                                 select_columns_list VARCHAR;
                                 update_conditions VARCHAR;
                             BEGIN
-                                -- Step 1: Create deduplicated source from STREAM with latest by key
+                                -- Step 1: Create deduplicated source from STREAM/VIEW SOURCE with latest by key
                                 CREATE OR REPLACE TEMP TABLE deduped_source AS
                                 SELECT *
                                 FROM (
                                     SELECT *,
                                            ROW_NUMBER() OVER (PARTITION BY {key_column_quoted} ORDER BY {sequence_by_quoted} DESC) AS rn
-                                    FROM {bronze_database}.{bronze_schema}.STREAM_{bronze_table}
+                                    FROM {bronze_database}.{bronze_schema}.{bronze_table}
                                 )
                                 WHERE rn = 1;
 
@@ -724,8 +724,11 @@ class SnowmetaPipeline:
 
         master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
         master_procedure_body = f""
+
+        if len(pipeline_silver_data) != len(pipeline_bronze_data):
+            raise ValueError("pipeline_silver_data and pipeline_bronze_data must have the same length")
            
-        for pipeline_index, silver_config in enumerate(pipeline_silver_data, 1):
+        for pipeline_index, (silver_config, bronze_config) in enumerate(zip(pipeline_silver_data, pipeline_bronze_data), 1)
             cdc_config = silver_config["silver_cdc_apply_changes"]
             scd_type = cdc_config["scd_type"]
             silver_database = silver_config["silver_database_dev"]
@@ -734,6 +737,8 @@ class SnowmetaPipeline:
             bronze_database = silver_config["bronze_database_dev"]
             bronze_schema = silver_config["bronze_schema"]
             bronze_table = silver_config["bronze_table"]
+            if bronze_config.get("load_strategy") == "full":
+                bronze_table = f"STREAM_{bronze_table}"
 
             silver_transformations = silver_config.get("silver_transformation_json")
             if silver_transformations:
