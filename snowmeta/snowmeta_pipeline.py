@@ -351,13 +351,15 @@ class SnowmetaPipeline:
     
    
     
-    def create_scd1_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None) -> str:    
+    def create_scd1_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None, stream_name=None) -> str:    
         """
         Generate SQL for creating a stored procedure for SCD Type 1 silver table.
         """
         bronze_database = silver_config["bronze_database_dev"]
         bronze_schema = silver_config["bronze_schema"]
         bronze_table = silver_config["bronze_table"]
+        if stream_name:
+            bronze_table=stream_name
 
         columns_to_track = silver_config.get("columns_to_track", [])
         columns_to_exclude = silver_config.get("columns_to_exclude", [])
@@ -477,13 +479,15 @@ class SnowmetaPipeline:
         return sql_procedure
                
     
-    def create_scd2_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None) -> str:    
+    def create_scd2_stored_procedure(self, silver_config: Dict[str, Any], flattened_view_name: Optional[str] = None, stream_name=None) -> str:    
         """
         Generate SQL for creating a stored procedure for SCD Type 2 silver table.
         """
         bronze_database = silver_config["bronze_database_dev"]
         bronze_schema = silver_config["bronze_schema"]
         bronze_table = silver_config["bronze_table"]
+        if stream_name:
+            bronze_table=stream_name
 
         if flattened_view_name:
             bronze_database = silver_config["silver_database_dev"]
@@ -817,9 +821,9 @@ class SnowmetaPipeline:
                     """
             else:
                 if scd_type == "2":
-                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config,bronze_table)
+                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config,stream_name=bronze_table)
                 if scd_type == "1":
-                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config,bronze_table)
+                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config,stream_name=bronze_table)
 
                 master_procedure_body += f"""
                 
