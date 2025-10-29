@@ -728,7 +728,7 @@ class SnowmetaPipeline:
         if len(pipeline_silver_data) != len(pipeline_bronze_data):
             raise ValueError("pipeline_silver_data and pipeline_bronze_data must have the same length")
            
-        for pipeline_index, (silver_config, bronze_config) in enumerate(zip(pipeline_silver_data, pipeline_bronze_data), 1)
+        for pipeline_index, (silver_config, bronze_config) in enumerate(zip(pipeline_silver_data, pipeline_bronze_data), 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
             scd_type = cdc_config["scd_type"]
             silver_database = silver_config["silver_database_dev"]
