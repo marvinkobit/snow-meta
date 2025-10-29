@@ -455,6 +455,7 @@ class SnowmetaPipeline:
                             THEN UPDATE SET
                                 {update_set_list}{"," if update_set_list else ""}
                                 t."_INGEST_TIMESTAMP" = s."_INGEST_TIMESTAMP",
+                                t."_SRC_FILENAME" = s."_SRC_FILENAME",
                                 t."OPERATION" = ''UPDATED''
                             
                             WHEN NOT MATCHED THEN INSERT
