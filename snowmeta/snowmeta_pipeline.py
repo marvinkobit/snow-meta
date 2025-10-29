@@ -817,9 +817,9 @@ class SnowmetaPipeline:
                     """
             else:
                 if scd_type == "2":
-                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config)
+                    scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config,bronze_table)
                 if scd_type == "1":
-                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config)
+                    scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config,bronze_table)
 
                 master_procedure_body += f"""
                 

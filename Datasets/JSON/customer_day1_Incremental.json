@@ -1,0 +1,22 @@
+[
+  {
+    "customer_id": 4,
+    "name": "Sarah Lee",
+    "address": "67 Croverfield St",
+    "nationkey": 4,
+    "phone": "555-1122",
+    "acctbal": 1200,
+    "mktsegment": "BUILDING",
+    "comment": "Long-term partner"
+  },
+  {
+    "customer_id": 6,
+    "name": "Robert Kennedy",
+    "address": "45 Jersey St",
+    "nationkey": 2,
+    "phone": "654-3344",
+    "acctbal": 1340.3,
+    "mktsegment": "AUTOMOBILE",
+    "comment": "New client"
+  }
+]
