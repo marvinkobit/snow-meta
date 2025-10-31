@@ -107,6 +107,90 @@ class SnowmetaSQL:
             "view_name": view_name
         }
 
+    def where_expression(
+        self,
+        bronze_database: str,
+        bronze_schema: str,
+        bronze_table: str,
+        silver_database: str,
+        silver_schema: str,
+        where_expression: list[str]
+        ) -> dict:
+        """
+        Generate a Snowflake stored procedure to create a view with a custom WHERE clause.
+
+        Args:
+            bronze_database: Source database (e.g., 'ANALYTICS')
+            bronze_schema: Source schema (e.g., 'FINANCIAL_BRONZE')
+            bronze_table: Source table name (e.g., 'products')
+            silver_database: Target database (e.g., 'ANALYTICS')
+            silver_schema: Target schema (e.g., 'FINANCIAL_SILVER')
+            where_expression: List of WHERE predicates combined with AND, e.g.,
+                [
+                    "product_details:name IS NOT NULL",
+                    "price:base > 0",
+                    "status = 'ACTIVE'"
+                ]
+
+        Returns:
+            Dictionary containing:
+                - sql: SQL string of the stored procedure
+                - procedure_name: Name of the procedure
+                - view_name: Name of the view generated
+
+        Example:
+            sql_gen = SnowmetaSQL()
+            result = sql_gen.where_expression(
+                bronze_database='ANALYTICS',
+                bronze_schema='FINANCIAL_BRONZE',
+                bronze_table='products',
+                silver_database='ANALYTICS',
+                silver_schema='FINANCIAL_SILVER',
+                where_expression=[
+                    "product_details:name IS NOT NULL",
+                    "price:base > 0"
+                ]
+            )
+            print(result['sql'])
+            print(f"Procedure: {result['procedure_name']}")
+            print(f"View: {result['view_name']}")
+        """
+
+        # Process the where_expression list to create the SQL WHERE clause
+        where_sql = " AND\n    ".join(where_expression) if where_expression else "1=1"
+        source_table = f"{bronze_database}.{bronze_schema}.{bronze_table}"
+        target_schema = f"{silver_database}.{silver_schema}"
+        view_name = f"FILTERED_{bronze_table.upper()}_WHERE"
+        procedure_name = f"AUTO_WHERE_{bronze_table}"
+
+        sql = f"""
+            CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            BEGIN
+                -- Drop and recreate the view with the custom WHERE clause
+                EXECUTE IMMEDIATE '
+                    CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+                    SELECT
+                        *
+                    FROM {source_table}
+                    WHERE
+                        {where_sql}
+                ';
+                RETURN 'View {view_name} created with custom where expression.';
+            END;
+            $$;
+        """
+
+        return {
+            "sql": sql,
+            "procedure_name": procedure_name,
+            "view_name": view_name
+        }
+
     def flatten_json(
         self,
         bronze_database: str,

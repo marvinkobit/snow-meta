@@ -749,6 +749,7 @@ class SnowmetaPipeline:
             if silver_transformations:
                 select_expressions = silver_transformations.get("select_exp")
                 columns_to_flatten = silver_transformations.get("columns_to_flatten")
+                where_expressions = silver_transformations.get("where_exp")
 
 
                 if columns_to_flatten:
@@ -810,6 +811,41 @@ class SnowmetaPipeline:
 
                     transformed_view_name = select_expression_view_name
                 
+
+                if where_expressions:
+                    sql_gen = SnowmetaSQL()
+                    if select_expressions or columns_to_flatten:
+                        where_expression_sql_gen = sql_gen.where_expression(
+                            bronze_database=silver_database,
+                            bronze_schema=silver_schema,
+                            bronze_table=transformed_view_name,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            where_expression=where_expressions
+                        )
+                    else:
+                        where_expression_sql_gen = sql_gen.where_expression(
+                            bronze_database=bronze_database,
+                            bronze_schema=bronze_schema,
+                            bronze_table=bronze_table,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            where_expression=where_expressions
+                        )
+                    where_expression_procedure_sql = where_expression_sql_gen['sql']
+                    where_expression_procedure_name = where_expression_sql_gen['procedure_name']
+                    where_expression_view_name = where_expression_sql_gen['view_name']
+                    self.session.sql(where_expression_procedure_sql).collect()
+                    self.logger.info(f"Successfully created where expression procedure: {where_expression_procedure_name}")
+                    self.logger.info(f"Successfully created where expression view: {where_expression_view_name}")
+                    master_procedure_body += f"""
+                    
+                    CALL {silver_database}.{silver_schema}.{where_expression_procedure_name}();
+                    
+                    """
+
+                    transformed_view_name = where_expression_view_name  
+
                 if scd_type == "2":
                     scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, transformed_view_name)
                 if scd_type == "1":
