@@ -82,7 +82,7 @@ class SnowmetaPipeline:
                 schema_dict = self.controltable_reader.bringyourownschema(byos_schema_location)
                 create_table_sql = self.controltable_reader.generate_create_table_from_schema(schema_dict, f"{bronze_database}.{bronze_schema}.{bronze_table}")
                 # Use custom schema from JSON file
-                procedure_body += f""" {create_table_sql} """
+                procedure_body += f""" {create_table_sql} {table_properties_sql} """
 
                 procedure_body += f"""
                 -- Copy data into table
@@ -115,9 +115,8 @@ class SnowmetaPipeline:
                         _INGESTED_AT TIMESTAMP_NTZ
                        
                     );
-                    {table_properties_sql}
 
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
+                    {table_properties_sql}
 
                     CREATE STREAM IF NOT EXISTS {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
 
@@ -154,6 +153,8 @@ class SnowmetaPipeline:
                         )
                         )
                     );
+
+                    {table_properties_sql}
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILENAME VARCHAR;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;
