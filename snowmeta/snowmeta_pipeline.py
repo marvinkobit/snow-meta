@@ -66,11 +66,17 @@ class SnowmetaPipeline:
                     prop = str(raw_prop).strip()
                     if not prop:
                         continue
-                    # Use CLUSTER BY directly; other props via SET
+                    # Normalize CLUSTER BY to valid ALTER TABLE syntax requiring parentheses
                     if prop.upper().startswith("CLUSTER BY"):
-                        alter_statements.append(
-                            f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} {prop};"
-                        )
+                        rest = prop[len("CLUSTER BY"):].strip()
+                        if rest.startswith("(") and rest.endswith(")"):
+                            expr = rest[1:-1].strip()
+                        else:
+                            expr = rest
+                        if expr:
+                            alter_statements.append(
+                                f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} CLUSTER BY ({expr});"
+                            )
                     else:
                         alter_statements.append(
                             f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET {prop};"
