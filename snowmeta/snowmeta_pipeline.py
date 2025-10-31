@@ -75,12 +75,12 @@ class SnowmetaPipeline:
                     INCLUDE_METADATA = (
                     _SRC_FILENAME=METADATA$FILENAME,
                     _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
-                    _FILE_RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
+                    _FILE_RECEIVED_AT=METADATA$FILE_LAST_MODIFIED
                     );
                     
                 UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
-                SET _INGEST_TIMESTAMP = CURRENT_TIMESTAMP()
-                WHERE _INGEST_TIMESTAMP IS NULL;
+                SET _INGESTED_AT = CURRENT_TIMESTAMP()
+                WHERE _INGESTED_AT IS NULL;
 
                 """
             
@@ -92,8 +92,8 @@ class SnowmetaPipeline:
                         {variant_column_name} VARIANT,
                         _SRC_FILENAME VARCHAR,
                         _SRC_FILE_ROW_NUMBER VARCHAR,
-                        _FILE_RECEIVED_TIMESTAMP TIMESTAMP_NTZ,
-                        _INGEST_TIMESTAMP TIMESTAMP_NTZ
+                        _FILE_RECEIVED_AT TIMESTAMP_NTZ,
+                        _INGESTED_AT TIMESTAMP_NTZ
                        
                     );
 
@@ -110,8 +110,8 @@ class SnowmetaPipeline:
                                 $1 AS {variant_column_name},
                                 METADATA$FILENAME AS _SRC_FILENAME,
                                 METADATA$FILE_ROW_NUMBER AS _SRC_FILE_ROW_NUMBER,
-                                METADATA$FILE_LAST_MODIFIED AS _FILE_RECEIVED_TIMESTAMP,
-                                CURRENT_TIMESTAMP() AS _INGEST_TIMESTAMP
+                                METADATA$FILE_LAST_MODIFIED AS _FILE_RECEIVED_AT,
+                                CURRENT_TIMESTAMP() AS _INGESTED_AT
                             FROM '{source_path}'
                             )
                         FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
@@ -137,8 +137,8 @@ class SnowmetaPipeline:
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILENAME VARCHAR;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGEST_TIMESTAMP TIMESTAMP_NTZ;
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _FILE_RECEIVED_TIMESTAMP TIMESTAMP_NTZ;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGESTED_AT TIMESTAMP_NTZ;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _FILE_RECEIVED_AT TIMESTAMP_NTZ;
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
 
@@ -155,12 +155,12 @@ class SnowmetaPipeline:
                     INCLUDE_METADATA = (
                     _SRC_FILENAME=METADATA$FILENAME,
                     _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
-                    _FILE_RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
+                    _FILE_RECEIVED_AT=METADATA$FILE_LAST_MODIFIED
                     );
                     
                 UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
-                SET _INGEST_TIMESTAMP = CURRENT_TIMESTAMP()
-                WHERE _INGEST_TIMESTAMP IS NULL;
+                SET _INGESTED_AT = CURRENT_TIMESTAMP()
+                WHERE _INGESTED_AT IS NULL;
 
                 """
         
@@ -454,7 +454,7 @@ class SnowmetaPipeline:
                             )
                             THEN UPDATE SET
                                 {update_set_list}{"," if update_set_list else ""}
-                                t."_INGEST_TIMESTAMP" = s."_INGEST_TIMESTAMP",
+                                t."_INGESTED_AT" = s."_INGESTED_AT",
                                 t."_SRC_FILENAME" = s."_SRC_FILENAME",
                                 t."OPERATION" = ''UPDATED''
                             
@@ -466,7 +466,7 @@ class SnowmetaPipeline:
 
                           UPDATE {silver_database}.{silver_schema}.{silver_table.upper()} t
                           SET t."OPERATION" = 'SOFT_DELETED',
-                              t."_INGEST_TIMESTAMP" = CURRENT_TIMESTAMP()
+                              t."_INGESTED_AT" = CURRENT_TIMESTAMP()
                           WHERE t.{key_column_quoted} NOT IN (
                               SELECT {key_column_quoted} FROM deduped_source
                           )
@@ -749,6 +749,7 @@ class SnowmetaPipeline:
             if silver_transformations:
                 select_expressions = silver_transformations.get("select_exp")
                 columns_to_flatten = silver_transformations.get("columns_to_flatten")
+                where_expressions = silver_transformations.get("dq")
 
 
                 if columns_to_flatten:
@@ -810,6 +811,41 @@ class SnowmetaPipeline:
 
                     transformed_view_name = select_expression_view_name
                 
+
+                if where_expressions:
+                    sql_gen = SnowmetaSQL()
+                    if select_expressions or columns_to_flatten:
+                        where_expression_sql_gen = sql_gen.where_expression(
+                            bronze_database=silver_database,
+                            bronze_schema=silver_schema,
+                            bronze_table=transformed_view_name,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            where_expression=where_expressions
+                        )
+                    else:
+                        where_expression_sql_gen = sql_gen.where_expression(
+                            bronze_database=bronze_database,
+                            bronze_schema=bronze_schema,
+                            bronze_table=bronze_table,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            where_expression=where_expressions
+                        )
+                    where_expression_procedure_sql = where_expression_sql_gen['sql']
+                    where_expression_procedure_name = where_expression_sql_gen['procedure_name']
+                    where_expression_view_name = where_expression_sql_gen['view_name']
+                    self.session.sql(where_expression_procedure_sql).collect()
+                    self.logger.info(f"Successfully created where expression procedure: {where_expression_procedure_name}")
+                    self.logger.info(f"Successfully created where expression view: {where_expression_view_name}")
+                    master_procedure_body += f"""
+                    
+                    CALL {silver_database}.{silver_schema}.{where_expression_procedure_name}();
+                    
+                    """
+
+                    transformed_view_name = where_expression_view_name  
+
                 if scd_type == "2":
                     scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, transformed_view_name)
                 if scd_type == "1":
