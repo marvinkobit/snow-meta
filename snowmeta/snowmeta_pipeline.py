@@ -75,7 +75,7 @@ class SnowmetaPipeline:
                     INCLUDE_METADATA = (
                     _SRC_FILENAME=METADATA$FILENAME,
                     _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
-                    _RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
+                    _FILE_RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
                     );
                     
                 UPDATE {bronze_database}.{bronze_schema}.{bronze_table}
@@ -92,7 +92,7 @@ class SnowmetaPipeline:
                         {variant_column_name} VARIANT,
                         _SRC_FILENAME VARCHAR,
                         _SRC_FILE_ROW_NUMBER VARCHAR,
-                        _RECEIVED_TIMESTAMP TIMESTAMP_NTZ,
+                        _FILE_RECEIVED_TIMESTAMP TIMESTAMP_NTZ,
                         _INGEST_TIMESTAMP TIMESTAMP_NTZ
                        
                     );
@@ -110,7 +110,7 @@ class SnowmetaPipeline:
                                 $1 AS {variant_column_name},
                                 METADATA$FILENAME AS _SRC_FILENAME,
                                 METADATA$FILE_ROW_NUMBER AS _SRC_FILE_ROW_NUMBER,
-                                METADATA$FILE_LAST_MODIFIED AS _RECEIVED_TIMESTAMP,
+                                METADATA$FILE_LAST_MODIFIED AS _FILE_RECEIVED_TIMESTAMP,
                                 CURRENT_TIMESTAMP() AS _INGEST_TIMESTAMP
                             FROM '{source_path}'
                             )
@@ -138,7 +138,7 @@ class SnowmetaPipeline:
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILENAME VARCHAR;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGEST_TIMESTAMP TIMESTAMP_NTZ;
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _RECEIVED_TIMESTAMP TIMESTAMP_NTZ;
+                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _FILE_RECEIVED_TIMESTAMP TIMESTAMP_NTZ;
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
 
@@ -155,7 +155,7 @@ class SnowmetaPipeline:
                     INCLUDE_METADATA = (
                     _SRC_FILENAME=METADATA$FILENAME,
                     _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
-                    _RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
+                    _FILE_RECEIVED_TIMESTAMP=METADATA$FILE_LAST_MODIFIED
                     );
                     
                 UPDATE {bronze_database}.{bronze_schema}.{bronze_table}

@@ -1,0 +1,87 @@
+{
+    "global_config": {
+        "pipeline_name":"vista_puller",
+        "warehouse": "WAREHOUSE_SO",
+        "table_properties":["ENABLE_SCHEMA_EVOLUTION","CLUSTER BY _INGEST_TIMESTAMP","COLLATE 'fr-ai'"],
+        "metadata_option":["METADATA$FILENAME","METADATA$FILE_ROW_NUMBER"],
+        "timestamp": "2025-10-30T23:11:09.400627"
+    },
+
+    "pipeline_bronze_control_config" : [
+        {
+            "source_table": "customer",
+            "source_path_dev": "@RAW.PUBLIC.LANDING/customers/",
+            "load_strategy":"full",
+            "reader_format": "CSV",
+            "bronze_database_dev": "ANALYTICS",
+            "bronze_schema": "BRONZE",
+            "bronze_table": "CUSTOMER"
+        },
+        {
+            "source_table": "customer",
+            "source_path_dev": "@RAW.PUBLIC.LANDING/customersjs/",
+            "reader_format": "JSON",
+            "load_strategy":"full",
+            "variant_load":"True",
+            "variant_column_name":"SRC_CUSTOMERS",
+            "bronze_database_dev": "ANALYTICS",
+            "bronze_schema": "BRONZE",
+            "bronze_table": "CUSTOMER_JS_VAR"
+        }
+    ],
+
+
+    "pipeline_silver_control_config" : [
+        {
+            "bronze_database_dev": "ANALYTICS",
+            "bronze_schema": "BRONZE",
+            "bronze_table": "CUSTOMER",
+            "silver_database_dev": "ANALYTICS",
+            "silver_schema": "SILVER",
+            "silver_table": "CUSTOMER",
+            "silver_cdc_apply_changes": {
+            "keys": [
+                "CUSTOMER_ID"
+            ],
+            "sequence_by": "_INGEST_TIMESTAMP",
+            "scd_type": "1", 
+            "columns_to_track":["ACCTBAL","ADDRESS","COMMENT","NAME"]
+            }
+        },
+
+        {
+            "bronze_database_dev": "ANALYTICS",
+            "bronze_schema": "BRONZE",
+            "bronze_table": "PRODUCTS_VAR",
+            "silver_database_dev": "ANALYTICS",
+            "silver_schema": "SILVER",
+            "silver_table": "PRODUCTS_VAR",
+            "silver_cdc_apply_changes": {
+            "keys": [
+                "product_id"
+            ],
+            "sequence_by": "_INGEST_TIMESTAMP",
+            "scd_type": "1", 
+            "columns_to_track":["IN_STOCK","PRICE_DISCOUNT","PRODUCT_BRAND","PRODUCT_NAME","SHIPPING_METHOD",
+                                "PRICE_BASE"]
+            },
+            "silver_transformation_json":{
+                "columns_to_flatten":["SRC_PRODUCTS"],
+                "select_exp":[
+                "PRODUCT_ID::STRING AS PRODUCT_ID",
+                "PRODUCT_DETAILS:name::STRING AS PRODUCT_NAME",
+                "PRODUCT_DETAILS:brand::STRING AS PRODUCT_BRAND",
+                "PRICE:base::VARIANT AS PRICE_BASE",
+                "PRICE:discount::VARIANT AS PRICE_DISCOUNT",
+                "SHIPPING:method::STRING AS SHIPPING_METHOD",
+                "SHIPPING:cost::FLOAT AS SHIPPING_COST",
+                "SHIPPING:estimated_days::INT AS SHIPPING_ESTIMATED_DAYS",
+                "IN_STOCK::BOOLEAN AS IN_STOCK",
+                "LAST_UPDATED::TIMESTAMP_NTZ AS LAST_UPDATED",
+                "_RECEIVED_TIMESTAMP",
+                "_INGEST_TIMESTAMP"
+            ]
+            }
+        }
+    ]
+}
