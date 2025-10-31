@@ -166,8 +166,8 @@ class ControlTableReader:
         # Add metadata columns (these are typically added by the pipeline)
         columns.append('  "_SRC_FILENAME" VARCHAR')
         columns.append('  "_SRC_FILE_ROW_NUMBER" NUMBER')
-        columns.append('  "_RECEIVED_TIMESTAMP" TIMESTAMP_NTZ')
-        columns.append('  "_INGESTED_TIMESTAMP" TIMESTAMP_NTZ')
+        columns.append('  "_FILE_RECEIVED_AT" TIMESTAMP_NTZ')
+        columns.append('  "_INGESTED_AT" TIMESTAMP_NTZ')
         
         
         # Deduplicate columns based on column name (case insensitive)

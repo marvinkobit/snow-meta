@@ -57,6 +57,25 @@ class SnowmetaPipeline:
             variant_column_name = pipeline_config.get("variant_column_name", "SRC")
             bronze_table = pipeline_config["bronze_table"]
             byos_schema_location = pipeline_config.get("byos_schema")
+            # Build optional table properties SQL if provided in config
+            table_properties_list = pipeline_config.get("table_properties", [])
+            table_properties_sql = ""
+            if table_properties_list:
+                alter_statements: List[str] = []
+                for raw_prop in table_properties_list:
+                    prop = str(raw_prop).strip()
+                    if not prop:
+                        continue
+                    # Use CLUSTER BY directly; other props via SET
+                    if prop.upper().startswith("CLUSTER BY"):
+                        alter_statements.append(
+                            f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} {prop};"
+                        )
+                    else:
+                        alter_statements.append(
+                            f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET {prop};"
+                        )
+                table_properties_sql = "\n".join(alter_statements)
             
             if byos_schema_location:
 
@@ -96,6 +115,7 @@ class SnowmetaPipeline:
                         _INGESTED_AT TIMESTAMP_NTZ
                        
                     );
+                    {table_properties_sql}
 
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
 
@@ -140,7 +160,7 @@ class SnowmetaPipeline:
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGESTED_AT TIMESTAMP_NTZ;
                     ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _FILE_RECEIVED_AT TIMESTAMP_NTZ;
 
-                    ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET ENABLE_SCHEMA_EVOLUTION = TRUE;
+                   
 
                     CREATE STREAM IF NOT EXISTS {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};
 
@@ -749,7 +769,7 @@ class SnowmetaPipeline:
             if silver_transformations:
                 select_expressions = silver_transformations.get("select_exp")
                 columns_to_flatten = silver_transformations.get("columns_to_flatten")
-                where_expressions = silver_transformations.get("dq")
+                where_expressions = silver_transformations.get("dq_exp")
 
 
                 if columns_to_flatten:

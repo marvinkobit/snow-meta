@@ -2,7 +2,7 @@
     "global_config": {
         "pipeline_name":"vista_puller",
         "warehouse": "WAREHOUSE_SO",
-        "table_properties":["ENABLE_SCHEMA_EVOLUTION","CLUSTER BY _INGEST_TIMESTAMP","COLLATE 'fr-ai'"],
+        "table_properties":["ENABLE_SCHEMA_EVOLUTION=TRUE","CLUSTER BY _INGESTED_AT","DEFAULT_DDL_COLLATION='fr-ai'"],
         "metadata_option":["METADATA$FILENAME","METADATA$FILE_ROW_NUMBER"],
         "timestamp": "2025-10-30T23:11:09.400627"
     },
@@ -13,6 +13,7 @@
             "source_path_dev": "@RAW.PUBLIC.LANDING/customers/",
             "load_strategy":"full",
             "reader_format": "CSV",
+            "table_properties":["ENABLE_SCHEMA_EVOLUTION=TRUE","CLUSTER BY _INGESTED_AT","DEFAULT_DDL_COLLATION='fr-ai'"],
             "bronze_database_dev": "ANALYTICS",
             "bronze_schema": "BRONZE",
             "bronze_table": "CUSTOMER"
