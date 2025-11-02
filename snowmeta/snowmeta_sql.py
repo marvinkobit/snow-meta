@@ -224,10 +224,19 @@ class SnowmetaSQL:
             $$;
             """
         elif where_action_upper == 'QUARANTINE':
-            # Create quarantine table if it doesn't exist
-            # We'll use the source table/view structure as a template
-            quarantine_database_schema = quarantine_table.rsplit('.', 1)[0]
-            quarantine_table_name = quarantine_table.rsplit('.', 1)[1]
+            # Parse quarantine table fully qualified name to extract database, schema, and table
+            quarantine_parts = quarantine_table.split('.')
+            if len(quarantine_parts) == 3:
+                quarantine_database = quarantine_parts[0]
+                quarantine_schema = quarantine_parts[1]
+                quarantine_table_name = quarantine_parts[2]
+            elif len(quarantine_parts) == 2:
+                # Assume format is schema.table (using current database context)
+                quarantine_database = silver_database
+                quarantine_schema = quarantine_parts[0]
+                quarantine_table_name = quarantine_parts[1]
+            else:
+                raise ValueError(f"Invalid quarantine_table format. Expected 'database.schema.table' or 'schema.table', got '{quarantine_table}'")
             
             sql = f"""
             CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
@@ -246,6 +255,12 @@ class SnowmetaSQL:
                 
                 -- If there are dropped records, insert them into quarantine table
                 IF (dropped_count > 0) THEN
+                    -- Create database if it doesn't exist (idempotent operation)
+                    EXECUTE IMMEDIATE 'CREATE DATABASE IF NOT EXISTS {quarantine_database}';
+                    
+                    -- Create schema if it doesn't exist (idempotent operation)
+                    EXECUTE IMMEDIATE 'CREATE SCHEMA IF NOT EXISTS {quarantine_database}.{quarantine_schema}';
+                    
                     -- Ensure quarantine table exists with same structure as source (without metadata columns)
                     CREATE TABLE IF NOT EXISTS {quarantine_table}
                     AS SELECT * FROM {source_table} WHERE 1=0;
