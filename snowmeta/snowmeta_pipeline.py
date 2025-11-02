@@ -750,6 +750,8 @@ class SnowmetaPipeline:
                 select_expressions = silver_transformations.get("select_exp")
                 columns_to_flatten = silver_transformations.get("columns_to_flatten")
                 where_expressions = silver_transformations.get("dq")
+                where_action = silver_transformations.get("where_action", "WARN").upper()
+                quarantine_table = silver_transformations.get("quarantine_table")
 
 
                 if columns_to_flatten:
@@ -821,7 +823,9 @@ class SnowmetaPipeline:
                             bronze_table=transformed_view_name,
                             silver_database=silver_database,
                             silver_schema=silver_schema,
-                            where_expression=where_expressions
+                            where_expression=where_expressions,
+                            where_action=where_action,
+                            quarantine_table=quarantine_table
                         )
                     else:
                         where_expression_sql_gen = sql_gen.where_expression(
@@ -830,7 +834,9 @@ class SnowmetaPipeline:
                             bronze_table=bronze_table,
                             silver_database=silver_database,
                             silver_schema=silver_schema,
-                            where_expression=where_expressions
+                            where_expression=where_expressions,
+                            where_action=where_action,
+                            quarantine_table=quarantine_table
                         )
                     where_expression_procedure_sql = where_expression_sql_gen['sql']
                     where_expression_procedure_name = where_expression_sql_gen['procedure_name']

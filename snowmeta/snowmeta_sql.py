@@ -5,6 +5,8 @@ This module provides SQL generation functionality that can be used across
 the snowmeta package for creating stored procedures and views.
 """
 
+from typing import Optional
+
 
 class SnowmetaSQL:
     """
@@ -114,10 +116,13 @@ class SnowmetaSQL:
         bronze_table: str,
         silver_database: str,
         silver_schema: str,
-        where_expression: list[str]
+        where_expression: list[str],
+        where_action: str = "WARN",
+        quarantine_table: Optional[str] = None
         ) -> dict:
         """
         Generate a Snowflake stored procedure to create a view with a custom WHERE clause.
+        Supports different actions for handling records that violate the WHERE expression.
 
         Args:
             bronze_database: Source database (e.g., 'ANALYTICS')
@@ -131,6 +136,14 @@ class SnowmetaSQL:
                     "price:base > 0",
                     "status = 'ACTIVE'"
                 ]
+            where_action: Action to take when WHERE expression is violated.
+                Options: 'WARN', 'QUARANTINE', 'FAIL'
+                - WARN: Count and log dropped records, continue processing
+                - QUARANTINE: Insert dropped records into quarantine table and log, continue processing
+                - FAIL: Raise an error and stop processing if any records violate WHERE expression
+                Default: 'WARN'
+            quarantine_table: Fully qualified quarantine table name (required for QUARANTINE mode).
+                Format: 'database.schema.table' (e.g., 'ANALYTICS.QUARANTINE.products_quarantine')
 
         Returns:
             Dictionary containing:
@@ -149,29 +162,55 @@ class SnowmetaSQL:
                 where_expression=[
                     "product_details:name IS NOT NULL",
                     "price:base > 0"
-                ]
+                ],
+                where_action='QUARANTINE',
+                quarantine_table='ANALYTICS.QUARANTINE.products_quarantine'
             )
             print(result['sql'])
             print(f"Procedure: {result['procedure_name']}")
             print(f"View: {result['view_name']}")
         """
+        # Validate where_action parameter
+        where_action_upper = where_action.upper()
+        if where_action_upper not in ['WARN', 'QUARANTINE', 'FAIL']:
+            raise ValueError(f"where_action must be one of ['WARN', 'QUARANTINE', 'FAIL'], got '{where_action}'")
+        
+        if where_action_upper == 'QUARANTINE' and not quarantine_table:
+            raise ValueError("quarantine_table is required when where_action is 'QUARANTINE'")
 
         # Process the where_expression list to create the SQL WHERE clause
         where_sql = " AND\n    ".join(where_expression) if where_expression else "1=1"
+        # Create the inverse WHERE clause for finding dropped records
+        where_not_sql = " OR\n    ".join([f"NOT ({expr})" for expr in where_expression]) if where_expression else "1=0"
+        
         source_table = f"{bronze_database}.{bronze_schema}.{bronze_table}"
         target_schema = f"{silver_database}.{silver_schema}"
         view_name = f"FILTERED_{bronze_table.upper()}_WHERE"
         procedure_name = f"AUTO_WHERE_{bronze_table}"
 
-        sql = f"""
+        # Build the SQL based on the action mode
+        if where_action_upper == 'FAIL':
+            sql = f"""
             CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
             RETURNS STRING
             LANGUAGE SQL
             EXECUTE AS OWNER
             AS
             $$
+            DECLARE
+                dropped_count NUMBER;
             BEGIN
-                -- Drop and recreate the view with the custom WHERE clause
+                -- Count records that violate the WHERE expression
+                SELECT COUNT(*) INTO :dropped_count
+                FROM {source_table}
+                WHERE {where_not_sql};
+                
+                -- If any records violate the WHERE expression, fail the transformation
+                IF (dropped_count > 0) THEN
+                    RAISE 'Silver transformation FAILED: ' || CAST(:dropped_count AS VARCHAR) || ' record(s) violated the WHERE expression.';
+                END IF;
+                
+                -- Create the view with records that pass the WHERE expression
                 EXECUTE IMMEDIATE '
                     CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
                     SELECT
@@ -180,10 +219,105 @@ class SnowmetaSQL:
                     WHERE
                         {where_sql}
                 ';
-                RETURN 'View {view_name} created with custom where expression.';
+                RETURN 'View {view_name} created with custom where expression. All records passed validation.';
             END;
             $$;
-        """
+            """
+        elif where_action_upper == 'QUARANTINE':
+            # Create quarantine table if it doesn't exist
+            # We'll use the source table/view structure as a template
+            quarantine_database_schema = quarantine_table.rsplit('.', 1)[0]
+            quarantine_table_name = quarantine_table.rsplit('.', 1)[1]
+            
+            sql = f"""
+            CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            DECLARE
+                dropped_count NUMBER;
+            BEGIN
+                -- Count records that violate the WHERE expression
+                SELECT COUNT(*) INTO :dropped_count
+                FROM {source_table}
+                WHERE {where_not_sql};
+                
+                -- If there are dropped records, insert them into quarantine table
+                IF (dropped_count > 0) THEN
+                    -- Ensure quarantine table exists with same structure as source (without metadata columns)
+                    CREATE TABLE IF NOT EXISTS {quarantine_table}
+                    AS SELECT * FROM {source_table} WHERE 1=0;
+                    
+                    -- Add metadata columns if they don't exist
+                    ALTER TABLE {quarantine_table} ADD COLUMN IF NOT EXISTS _QUARANTINED_AT TIMESTAMP_NTZ;
+                    ALTER TABLE {quarantine_table} ADD COLUMN IF NOT EXISTS _QUARANTINE_REASON VARCHAR;
+                    
+                    -- Insert dropped records into quarantine table with all source columns plus metadata
+                    -- Using SELECT * to handle any table/view structure dynamically
+                    INSERT INTO {quarantine_table}
+                    SELECT 
+                        *,
+                        CURRENT_TIMESTAMP() AS _QUARANTINED_AT,
+                        'WHERE expression violation' AS _QUARANTINE_REASON
+                    FROM {source_table}
+                    WHERE {where_not_sql};
+                END IF;
+                
+                -- Create the view with records that pass the WHERE expression
+                EXECUTE IMMEDIATE '
+                    CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+                    SELECT
+                        *
+                    FROM {source_table}
+                    WHERE
+                        {where_sql}
+                ';
+                
+                IF (dropped_count > 0) THEN
+                    RETURN 'View {view_name} created. ' || CAST(:dropped_count AS VARCHAR) || ' record(s) dropped and moved to quarantine table {quarantine_table}.';
+                ELSE
+                    RETURN 'View {view_name} created with custom where expression. All records passed validation.';
+                END IF;
+            END;
+            $$;
+            """
+        else:  # WARN mode (default)
+            sql = f"""
+            CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            DECLARE
+                dropped_count NUMBER;
+            BEGIN
+                -- Count records that violate the WHERE expression
+                SELECT COUNT(*) INTO :dropped_count
+                FROM {source_table}
+                WHERE {where_not_sql};
+                
+                -- Create the view with records that pass the WHERE expression
+                EXECUTE IMMEDIATE '
+                    CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+                    SELECT
+                        *
+                    FROM {source_table}
+                    WHERE
+                        {where_sql}
+                ';
+                
+                -- Log the count of dropped records
+                IF (dropped_count > 0) THEN
+                    RETURN 'View {view_name} created. WARNING: ' || CAST(:dropped_count AS VARCHAR) || ' record(s) dropped by WHERE expression.';
+                ELSE
+                    RETURN 'View {view_name} created with custom where expression. All records passed validation.';
+                END IF;
+            END;
+            $$;
+            """
 
         return {
             "sql": sql,
