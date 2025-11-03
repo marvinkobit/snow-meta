@@ -104,7 +104,14 @@ class SnowmetaSQL:
         return {
             "sql": sql,
             "procedure_name": procedure_name,
-            "view_name": view_name
+            "view_name": view_name,
+            # Provide direct-execution SQL for creating the view without a stored procedure
+            "view_sql": f"""
+CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+SELECT
+    {select_sql}
+FROM {source_table}
+"""
         }
 
     def where_expression(
@@ -188,7 +195,16 @@ class SnowmetaSQL:
         return {
             "sql": sql,
             "procedure_name": procedure_name,
-            "view_name": view_name
+            "view_name": view_name,
+            # Provide direct-execution SQL for creating the view without a stored procedure
+            "view_sql": f"""
+CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+SELECT
+    *
+FROM {source_table}
+WHERE
+    {where_sql}
+"""
         }
 
     def flatten_json(

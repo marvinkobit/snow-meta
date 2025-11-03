@@ -329,11 +329,39 @@ class SnowmetaPipeline:
             bronze_database = pipeline_config["bronze_database_dev"]
             bronze_schema = pipeline_config["bronze_schema"]
             bronze_table = pipeline_config["bronze_table"]
-            
+
+            # Optional flags/configs
+            variantload = pipeline_config.get("variant_load", False)
+            variant_column_name = pipeline_config.get("variant_column_name", "SRC")
+            byos_schema_location = pipeline_config.get("byos_schema")
+
             fully_qualified_table = f"{bronze_database}.{bronze_schema}.{bronze_table}"
-            
+
+            # Build optional table properties statements
+            table_properties_list = pipeline_config.get("table_properties", [])
+            table_properties_sql: List[str] = []
+            if table_properties_list:
+                for raw_prop in table_properties_list:
+                    prop = str(raw_prop).strip()
+                    if not prop:
+                        continue
+                    if prop.upper().startswith("CLUSTER BY"):
+                        rest = prop[len("CLUSTER BY"):].strip()
+                        if rest.startswith("(") and rest.endswith(")"):
+                            expr = rest[1:-1].strip()
+                        else:
+                            expr = rest
+                        if expr:
+                            table_properties_sql.append(
+                                f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} CLUSTER BY ({expr});"
+                            )
+                    else:
+                        table_properties_sql.append(
+                            f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} SET {prop};"
+                        )
+
             self.logger.info(f"Processing pipeline {pipeline_index}/{len(pipeline_data)}: {fully_qualified_table}")
-            
+
             if use_stored_procedures:
                 # Create unified stored procedure for all tables
                 sql_procedure = self.create_unified_bronze_stored_procedure(pipeline_data)
@@ -368,11 +396,120 @@ class SnowmetaPipeline:
                     return result
                 except Exception as e:
                     self.logger.error(f"Failed to execute unified task: {e}")
-                    
-                    
-                
+                    raise
+
                 # Break after creating unified procedure and task (only once)
                 break
+            else:
+                # Direct SQL execution path (no stored procedures / tasks)
+                statements: List[str] = []
+
+                if byos_schema_location:
+                    schema_dict = self.controltable_reader.bringyourownschema(byos_schema_location)
+                    create_table_sql = self.controltable_reader.generate_create_table_from_schema(
+                        schema_dict, f"{bronze_database}.{bronze_schema}.{bronze_table}"
+                    )
+                    statements.append(create_table_sql)
+                    if table_properties_sql:
+                        statements.extend(table_properties_sql)
+
+                    statements.append(
+                        f"""COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                            FROM '{source_path}'
+                            FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                            PATTERN = '.*\\.{file_format.lower()}'
+                            MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+                            INCLUDE_METADATA = (
+                                _SRC_FILENAME=METADATA$FILENAME,
+                                _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
+                                _FILE_RECEIVED_AT=METADATA$FILE_LAST_MODIFIED
+                            );"""
+                    )
+                    statements.append(
+                        f"UPDATE {bronze_database}.{bronze_schema}.{bronze_table} SET _INGESTED_AT = CURRENT_TIMESTAMP() WHERE _INGESTED_AT IS NULL;"
+                    )
+
+                elif variantload:
+                    statements.append(
+                        f"""CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table} (
+                                {variant_column_name} VARIANT,
+                                _SRC_FILENAME VARCHAR,
+                                _SRC_FILE_ROW_NUMBER VARCHAR,
+                                _FILE_RECEIVED_AT TIMESTAMP_NTZ,
+                                _INGESTED_AT TIMESTAMP_NTZ
+                            );"""
+                    )
+                    if table_properties_sql:
+                        statements.extend(table_properties_sql)
+
+                    statements.append(
+                        f"CREATE STREAM IF NOT EXISTS {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};"
+                    )
+                    statements.append(
+                        f"""COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                            FROM (
+                                SELECT
+                                    $1 AS {variant_column_name},
+                                    METADATA$FILENAME AS _SRC_FILENAME,
+                                    METADATA$FILE_ROW_NUMBER AS _SRC_FILE_ROW_NUMBER,
+                                    METADATA$FILE_LAST_MODIFIED AS _FILE_RECEIVED_AT,
+                                    CURRENT_TIMESTAMP() AS _INGESTED_AT
+                                FROM '{source_path}'
+                            )
+                            FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                            PATTERN = '.*\\.{file_format.lower()}';"""
+                    )
+
+                else:
+                    statements.append(
+                        f"""CREATE TABLE IF NOT EXISTS {bronze_database}.{bronze_schema}.{bronze_table}
+                            USING TEMPLATE (
+                                SELECT ARRAY_AGG(OBJECT_CONSTRUCT(*))
+                                FROM TABLE(
+                                    INFER_SCHEMA(
+                                        LOCATION => '{source_path}',
+                                        FILE_FORMAT => 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT',
+                                        IGNORE_CASE => TRUE
+                                    )
+                                )
+                            );"""
+                    )
+                    statements.append(
+                        f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILENAME VARCHAR;"
+                    )
+                    statements.append(
+                        f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _SRC_FILE_ROW_NUMBER NUMBER;"
+                    )
+                    statements.append(
+                        f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _INGESTED_AT TIMESTAMP_NTZ;"
+                    )
+                    statements.append(
+                        f"ALTER TABLE {bronze_database}.{bronze_schema}.{bronze_table} ADD COLUMN IF NOT EXISTS _FILE_RECEIVED_AT TIMESTAMP_NTZ;"
+                    )
+                    if table_properties_sql:
+                        statements.extend(table_properties_sql)
+                    statements.append(
+                        f"CREATE STREAM IF NOT EXISTS {bronze_database}.{bronze_schema}.STREAM_{bronze_table} ON TABLE {bronze_database}.{bronze_schema}.{bronze_table};"
+                    )
+                    statements.append(
+                        f"""COPY INTO {bronze_database}.{bronze_schema}.{bronze_table}
+                            FROM '{source_path}'
+                            FILE_FORMAT = (FORMAT_NAME = 'RAW.SNOWMETA_CONFIG.{file_format}_FILE_FORMAT')
+                            PATTERN = '.*\\.{file_format.lower()}'
+                            MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+                            INCLUDE_METADATA = (
+                                _SRC_FILENAME=METADATA$FILENAME,
+                                _SRC_FILE_ROW_NUMBER=METADATA$FILE_ROW_NUMBER,
+                                _FILE_RECEIVED_AT=METADATA$FILE_LAST_MODIFIED
+                            );"""
+                    )
+                    statements.append(
+                        f"UPDATE {bronze_database}.{bronze_schema}.{bronze_table} SET _INGESTED_AT = CURRENT_TIMESTAMP() WHERE _INGESTED_AT IS NULL;"
+                    )
+
+                # Execute all statements sequentially
+                for sql_stmt in statements:
+                    self.session.sql(sql_stmt).collect()
            
         self.logger.info(f"Pipeline execution completed. Processed {len(pipeline_data)} table(s).")
     
