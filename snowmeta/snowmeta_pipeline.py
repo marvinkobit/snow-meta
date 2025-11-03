@@ -472,6 +472,9 @@ class SnowmetaPipeline:
                           )
                           AND t."OPERATION" <> 'SOFT_DELETED';
                          
+                          -- Cleanup transient staging table if created earlier in the pipeline
+                          EXECUTE IMMEDIATE 'DROP TABLE IF EXISTS {silver_database}.{silver_schema}._TMP_{bronze_table}_TRANSIENT';
+                                                                                        # _TMP_FILTERED_STREAM_CUSTOMER_WHERE_TRANSIENT
                           RETURN 'SCD1 merge with soft delete completed successfully.';
                          
                         END;
@@ -624,6 +627,9 @@ class SnowmetaPipeline:
                                 WHERE target.IS_CURRENT = TRUE
                                   AND target.{key_column_quoted} NOT IN (SELECT {key_column_quoted} FROM deduped_source);
 
+                                -- Cleanup transient staging table if created earlier in the pipeline
+                                EXECUTE IMMEDIATE 'DROP TABLE IF EXISTS {silver_database}.{silver_schema}._TMP_{bronze_table}_TRANSIENT';
+
                                 RETURN 'SCD2 upsert complete with operation logging';
                             END;
                             $$;
@@ -750,7 +756,7 @@ class SnowmetaPipeline:
                 select_expressions = silver_transformations.get("select_exp")
                 columns_to_flatten = silver_transformations.get("columns_to_flatten")
                 where_expressions = silver_transformations.get("dq")
-                where_action = silver_transformations.get("where_action", "WARN").upper()
+                where_action = silver_transformations.get("dq_action", "WARN").upper()
                 quarantine_table = silver_transformations.get("quarantine_table")
 
 

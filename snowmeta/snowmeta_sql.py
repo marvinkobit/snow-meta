@@ -238,6 +238,9 @@ class SnowmetaSQL:
             else:
                 raise ValueError(f"Invalid quarantine_table format. Expected 'database.schema.table' or 'schema.table', got '{quarantine_table}'")
             
+            # Use a transient copy of the source for all subsequent operations in QUARANTINE mode
+            transient_source_table = f"{target_schema}._TMP_{view_name}_TRANSIENT"
+
             sql = f"""
             CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
             RETURNS STRING
@@ -248,12 +251,25 @@ class SnowmetaSQL:
             DECLARE
                 dropped_count NUMBER;
             BEGIN
-                -- Count records that violate the WHERE expression
+                -- Create a transient staging table from the source
+                EXECUTE IMMEDIATE 'CREATE OR REPLACE TRANSIENT TABLE {transient_source_table} AS SELECT * FROM {source_table}';
+
+                -- First: Create the silver view with records that pass the WHERE expression (from transient source)
+                EXECUTE IMMEDIATE '
+                    CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+                    SELECT
+                        *
+                    FROM {transient_source_table}
+                    WHERE
+                        {where_sql}
+                ';
+                
+                -- Second: Count records that violate the WHERE expression
                 SELECT COUNT(*) INTO :dropped_count
-                FROM {source_table}
+                FROM {transient_source_table}
                 WHERE {where_not_sql};
                 
-                -- If there are dropped records, insert them into quarantine table
+                -- Third: If there are violating records, move them to quarantine table
                 IF (dropped_count > 0) THEN
                     -- Create database if it doesn't exist (idempotent operation)
                     EXECUTE IMMEDIATE 'CREATE DATABASE IF NOT EXISTS {quarantine_database}';
@@ -263,32 +279,22 @@ class SnowmetaSQL:
                     
                     -- Ensure quarantine table exists with same structure as source (without metadata columns)
                     CREATE TABLE IF NOT EXISTS {quarantine_table}
-                    AS SELECT * FROM {source_table} WHERE 1=0;
+                    AS SELECT * FROM {transient_source_table} WHERE 1=0;
                     
                     -- Add metadata columns if they don't exist
                     ALTER TABLE {quarantine_table} ADD COLUMN IF NOT EXISTS _QUARANTINED_AT TIMESTAMP_NTZ;
                     ALTER TABLE {quarantine_table} ADD COLUMN IF NOT EXISTS _QUARANTINE_REASON VARCHAR;
                     
-                    -- Insert dropped records into quarantine table with all source columns plus metadata
+                    -- Insert ONLY records that violate the WHERE expression into quarantine table
                     -- Using SELECT * to handle any table/view structure dynamically
                     INSERT INTO {quarantine_table}
                     SELECT 
                         *,
                         CURRENT_TIMESTAMP() AS _QUARANTINED_AT,
                         'WHERE expression violation' AS _QUARANTINE_REASON
-                    FROM {source_table}
+                    FROM {transient_source_table}
                     WHERE {where_not_sql};
                 END IF;
-                
-                -- Create the view with records that pass the WHERE expression
-                EXECUTE IMMEDIATE '
-                    CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
-                    SELECT
-                        *
-                    FROM {source_table}
-                    WHERE
-                        {where_sql}
-                ';
                 
                 IF (dropped_count > 0) THEN
                     RETURN 'View {view_name} created. ' || CAST(:dropped_count AS VARCHAR) || ' record(s) dropped and moved to quarantine table {quarantine_table}.';
