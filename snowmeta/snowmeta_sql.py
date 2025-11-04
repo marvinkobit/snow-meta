@@ -186,10 +186,14 @@ FROM {source_table}
         """.rstrip()
 
         create_quarantine_table_stmt = ""
+        create_quarantine_insert_stmt = ""
         if has_quarantine and quarantine_where_sql:
             create_quarantine_table_stmt = f"""
                     CREATE TABLE IF NOT EXISTS {target_schema}.{quarantine_table_name} AS
-                    SELECT * FROM {transient_source_table} WHERE 1=0;
+                    SELECT * FROM {transient_source_table} WHERE 1=0
+            """.rstrip()
+            
+            create_quarantine_insert_stmt = f"""
                     INSERT INTO {target_schema}.{quarantine_table_name}
                     SELECT *
                     FROM {transient_source_table}
@@ -197,14 +201,14 @@ FROM {source_table}
                         {quarantine_where_sql}
             """.rstrip()
 
-        quarantine_exec = (
-            f"""
-                -- Create/append to quarantine table
-                EXECUTE IMMEDIATE '
-{create_quarantine_table_stmt}
-                ';
-            """ if has_quarantine and create_quarantine_table_stmt else ""
-        )
+        quarantine_exec = ""
+        if has_quarantine and create_quarantine_table_stmt:
+            quarantine_exec = f"""
+                -- Create quarantine table
+                EXECUTE IMMEDIATE '{create_quarantine_table_stmt}';
+                -- Insert into quarantine table
+                EXECUTE IMMEDIATE '{create_quarantine_insert_stmt}';
+            """
 
         sql = f"""
             CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
