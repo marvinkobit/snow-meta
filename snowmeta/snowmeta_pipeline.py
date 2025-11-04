@@ -922,7 +922,7 @@ class SnowmetaPipeline:
                 if silver_transformations:
                     select_expressions = silver_transformations.get("select_exp")
                     columns_to_flatten = silver_transformations.get("columns_to_flatten")
-                    where_expressions = silver_transformations.get("dq_exp")
+                    dq_expectations = silver_transformations.get("data_quality_expectations")
 
                     if columns_to_flatten:
                         sql_gen = SnowmetaSQL()
@@ -984,25 +984,25 @@ class SnowmetaPipeline:
                         transformed_view_name = select_expression_view_name
                     
 
-                    if where_expressions:
+                    if dq_expectations:
                         sql_gen = SnowmetaSQL()
                         if select_expressions or columns_to_flatten:
-                            where_expression_sql_gen = sql_gen.where_expression(
+                            where_expression_sql_gen = sql_gen.dq_expectations(
                                 bronze_database=silver_database,
                                 bronze_schema=silver_schema,
                                 bronze_table=transformed_view_name,
                                 silver_database=silver_database,
                                 silver_schema=silver_schema,
-                                where_expression=where_expressions
+                                dq_expectations=dq_expectations
                             )
                         else:
-                            where_expression_sql_gen = sql_gen.where_expression(
+                            where_expression_sql_gen = sql_gen.dq_expectations(
                                 bronze_database=bronze_database,
                                 bronze_schema=bronze_schema,
                                 bronze_table=bronze_table,
                                 silver_database=silver_database,
                                 silver_schema=silver_schema,
-                                where_expression=where_expressions
+                                dq_expectations=dq_expectations
                             )
                         where_expression_procedure_sql = where_expression_sql_gen['sql']
                         where_expression_procedure_name = where_expression_sql_gen['procedure_name']
@@ -1058,7 +1058,7 @@ class SnowmetaPipeline:
                 if silver_transformations:
                     select_expressions = silver_transformations.get("select_exp")
                     columns_to_flatten = silver_transformations.get("columns_to_flatten")
-                    where_expressions = silver_transformations.get("dq_exp")
+                    dq_expectations = silver_transformations.get("data_quality_expectations")
 
                     if columns_to_flatten:
                         sql_gen = SnowmetaSQL()
@@ -1109,25 +1109,25 @@ class SnowmetaPipeline:
                         transformed_view_name = select_expression_view_name
                     
 
-                    if where_expressions:
+                    if dq_expectations:
                         sql_gen = SnowmetaSQL()
                         if select_expressions or columns_to_flatten:
-                            where_expression_sql_gen = sql_gen.where_expression(
+                            where_expression_sql_gen = sql_gen.dq_expectations(
                                 bronze_database=silver_database,
                                 bronze_schema=silver_schema,
                                 bronze_table=transformed_view_name,
                                 silver_database=silver_database,
                                 silver_schema=silver_schema,
-                                where_expression=where_expressions
+                                dq_expectations=dq_expectations
                             )
                         else:
-                            where_expression_sql_gen = sql_gen.where_expression(
+                            where_expression_sql_gen = sql_gen.dq_expectations(
                                 bronze_database=bronze_database,
                                 bronze_schema=bronze_schema,
                                 bronze_table=bronze_table,
                                 silver_database=silver_database,
                                 silver_schema=silver_schema,
-                                where_expression=where_expressions
+                                dq_expectations=dq_expectations
                             )
                         where_expression_procedure_sql = where_expression_sql_gen['sql']
                         where_expression_procedure_name = where_expression_sql_gen['procedure_name']

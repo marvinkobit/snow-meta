@@ -69,19 +69,23 @@
             "silver_transformation_json":{
                 "columns_to_flatten":["SRC_PRODUCTS"],
                 "select_exp":[
-                "PRODUCT_ID::STRING AS PRODUCT_ID",
-                "PRODUCT_DETAILS:name::STRING AS PRODUCT_NAME",
-                "PRODUCT_DETAILS:brand::STRING AS PRODUCT_BRAND",
-                "PRICE:base::VARIANT AS PRICE_BASE",
-                "PRICE:discount::VARIANT AS PRICE_DISCOUNT",
-                "SHIPPING:method::STRING AS SHIPPING_METHOD",
-                "SHIPPING:cost::FLOAT AS SHIPPING_COST",
-                "SHIPPING:estimated_days::INT AS SHIPPING_ESTIMATED_DAYS",
-                "IN_STOCK::BOOLEAN AS IN_STOCK",
-                "LAST_UPDATED::TIMESTAMP_NTZ AS LAST_UPDATED",
-                "_RECEIVED_TIMESTAMP",
-                "_INGEST_TIMESTAMP"
-            ]
+                        "PRODUCT_ID::STRING AS PRODUCT_ID",
+                        "PRODUCT_DETAILS:name::STRING AS PRODUCT_NAME",
+                        "PRODUCT_DETAILS:brand::STRING AS PRODUCT_BRAND",
+                        "PRICE:base::VARIANT AS PRICE_BASE",
+                        "PRICE:discount::VARIANT AS PRICE_DISCOUNT",
+                        "SHIPPING:method::STRING AS SHIPPING_METHOD",
+                        "SHIPPING:cost::FLOAT AS SHIPPING_COST",
+                        "SHIPPING:estimated_days::INT AS SHIPPING_ESTIMATED_DAYS",
+                        "IN_STOCK::BOOLEAN AS IN_STOCK",
+                        "LAST_UPDATED::TIMESTAMP_NTZ AS LAST_UPDATED",
+                        "_RECEIVED_TIMESTAMP",
+                        "_INGEST_TIMESTAMP"
+                    ],
+                "data_quality_expectations":{
+                    "expect_or_drop":["PRODUCT_NAME IS NOT NULL","PRODUCT_BRAND IS NOT NULL"],
+                    "expect_or_quarantine":["SHIPPING_METHOD IS NOT NULL","PRICE_DISCOUNT < PRICE_BASE"]
+                }
             }
         }
     ]
