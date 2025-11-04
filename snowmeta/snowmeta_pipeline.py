@@ -288,7 +288,7 @@ class SnowmetaPipeline:
         
         return f"EXECUTE TASK {bronze_database}.{bronze_schema}.{task_name};"
 
-    def invoke_bronze_pipeline(self, pipeline_data: List[Dict[str, str]], warehouse_name: str = "COMPUTE_WH", use_stored_procedures: bool = True) -> None:
+    def invoke_bronze_pipeline(self, pipeline_data: List[Dict[str, str]], warehouse_name: str = "COMPUTE_WH", use_stored_procedures: bool = False) -> None:
         """
         Execute a data pipeline that creates tables and loads data in Snowflake.
         Can use either direct SQL execution or stored procedures with tasks.
@@ -834,9 +834,11 @@ class SnowmetaPipeline:
                                      pipeline_bronze_data: List[Dict[str, str]],
                                      warehouse_name: str = "COMPUTE_WH",
                                      bronze_task_name: Optional[str] = None,
-                                     execute_tasks: bool = True) -> Any:
+                                     execute_tasks: bool = True,
+                                     use_stored_procedures: bool = False) -> Any:
         """
         Execute a silver layer pipeline that creates stored procedures and tasks for SCD Type 2 logic.
+        Can use either direct SQL execution or stored procedures with tasks.
         
         Args:
             pipeline_silver_data: List of dictionaries containing silver pipeline configuration.
@@ -857,6 +859,7 @@ class SnowmetaPipeline:
             warehouse_name: Warehouse to use for tasks (default: "COMPUTE_WH")
             bronze_task_name: Optional bronze task name to chain after
             execute_tasks: Whether to execute tasks immediately (default: True)
+            use_stored_procedures: Whether to use stored procedures and tasks (default: False)
             
         Returns:
             None
@@ -891,11 +894,12 @@ class SnowmetaPipeline:
         silver_schema_prime = pipeline_silver_data[0]["silver_schema"]
         silver_table_prime = pipeline_silver_data[0]["silver_table"]
 
-        master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
-        master_procedure_body = f""
-
         if len(pipeline_silver_data) != len(pipeline_bronze_data):
             raise ValueError("pipeline_silver_data and pipeline_bronze_data must have the same length")
+        
+        if use_stored_procedures:
+            master_silver_procedure_name = f"SP_SNOWMETA_SILVER_MASTER_{silver_schema_prime.upper()}"
+            master_procedure_body = f""
            
         for pipeline_index, (silver_config, bronze_config) in enumerate(zip(pipeline_silver_data, pipeline_bronze_data), 1):
             cdc_config = silver_config["silver_cdc_apply_changes"]
@@ -910,11 +914,15 @@ class SnowmetaPipeline:
                 bronze_table = f"STREAM_{bronze_table}"
 
             silver_transformations = silver_config.get("silver_transformation_json")
+            fully_qualified_silver_table = f"{silver_database}.{silver_schema}.{silver_table}"
+            self.logger.info(f"Processing SCD{scd_type} silver pipeline {pipeline_index}/{len(pipeline_silver_data)}: {fully_qualified_silver_table}")
+            
+            if use_stored_procedures:
+                # Stored procedures and tasks path
             if silver_transformations:
                 select_expressions = silver_transformations.get("select_exp")
                 columns_to_flatten = silver_transformations.get("columns_to_flatten")
                 where_expressions = silver_transformations.get("dq_exp")
-
 
                 if columns_to_flatten:
                     sql_gen = SnowmetaSQL()
@@ -1032,12 +1040,9 @@ class SnowmetaPipeline:
                 
                 """
 
-            fully_qualified_silver_table = f"{silver_database}.{silver_schema}.{silver_table}"
-            
-            self.logger.info(f"Processing SCD2 silver pipeline {pipeline_index}/{len(pipeline_silver_data)}: {fully_qualified_silver_table}")                      
             # Create stored procedure           
             try:
-                self.logger.info(f"Creating SCD2 stored procedure for {fully_qualified_silver_table}")
+                    self.logger.info(f"Creating SCD{scd_type} stored procedure for {fully_qualified_silver_table}")
                 if scd_type == "2":
                     self.session.sql(scd2_procedure_sql).collect()
                 if scd_type == "1":
@@ -1046,7 +1051,155 @@ class SnowmetaPipeline:
             except Exception as e:
                 self.logger.error(f"Failed to create SCD{scd_type} stored procedure: {e}")
                 raise
+            else:
+                # Direct SQL execution path (no stored procedures / tasks)
+                transformed_view_name = None
+                
+                if silver_transformations:
+                    select_expressions = silver_transformations.get("select_exp")
+                    columns_to_flatten = silver_transformations.get("columns_to_flatten")
+                    where_expressions = silver_transformations.get("dq_exp")
 
+                    if columns_to_flatten:
+                        sql_gen = SnowmetaSQL()
+                        flattening_sql_gen = sql_gen.flatten_json(
+                            bronze_database=bronze_database,
+                            bronze_schema=bronze_schema,
+                            bronze_table=bronze_table,
+                            silver_database=silver_database,
+                            silver_schema=silver_schema,
+                            columns_to_flatten=columns_to_flatten
+                        )
+                        flattening_procedure_sql = flattening_sql_gen['sql']
+                        flattening_procedure_name = flattening_sql_gen['procedure_name']
+                        flattened_view_name = flattening_sql_gen['view_name']
+                        self.session.sql(flattening_procedure_sql).collect()
+                        self.logger.info(f"Successfully created flattening procedure: {flattening_procedure_name}")
+                        self.session.sql(f"CALL {silver_database}.{silver_schema}.{flattening_procedure_name}();").collect()
+                        self.logger.info(f"Successfully executed flattening procedure")
+                        transformed_view_name = flattened_view_name
+                        
+                    if select_expressions:
+                        sql_gen = SnowmetaSQL()
+                        if columns_to_flatten:
+                            select_expression_sql_gen = sql_gen.select_expression(
+                                bronze_database=silver_database,
+                                bronze_schema=silver_schema,
+                                bronze_table=flattened_view_name,
+                                silver_database=silver_database,
+                                silver_schema=silver_schema,
+                                select_expression=select_expressions
+                            )
+                        else:
+                            select_expression_sql_gen = sql_gen.select_expression(
+                                bronze_database=bronze_database,
+                                bronze_schema=bronze_schema,
+                                bronze_table=bronze_table,
+                                silver_database=silver_database,
+                                silver_schema=silver_schema,
+                                select_expression=select_expressions
+                            )
+                        select_expression_procedure_sql = select_expression_sql_gen['sql']
+                        select_expression_procedure_name = select_expression_sql_gen['procedure_name']
+                        select_expression_view_name = select_expression_sql_gen['view_name']
+                        self.session.sql(select_expression_procedure_sql).collect()
+                        self.logger.info(f"Successfully created select expression procedure: {select_expression_procedure_name}")
+                        self.session.sql(f"CALL {silver_database}.{silver_schema}.{select_expression_procedure_name}();").collect()
+                        self.logger.info(f"Successfully executed select expression procedure")
+                        transformed_view_name = select_expression_view_name
+                    
+
+                    if where_expressions:
+                        sql_gen = SnowmetaSQL()
+                        if select_expressions or columns_to_flatten:
+                            where_expression_sql_gen = sql_gen.where_expression(
+                                bronze_database=silver_database,
+                                bronze_schema=silver_schema,
+                                bronze_table=transformed_view_name,
+                                silver_database=silver_database,
+                                silver_schema=silver_schema,
+                                where_expression=where_expressions
+                            )
+                        else:
+                            where_expression_sql_gen = sql_gen.where_expression(
+                                bronze_database=bronze_database,
+                                bronze_schema=bronze_schema,
+                                bronze_table=bronze_table,
+                                silver_database=silver_database,
+                                silver_schema=silver_schema,
+                                where_expression=where_expressions
+                            )
+                        where_expression_procedure_sql = where_expression_sql_gen['sql']
+                        where_expression_procedure_name = where_expression_sql_gen['procedure_name']
+                        where_expression_view_name = where_expression_sql_gen['view_name']
+                        self.session.sql(where_expression_procedure_sql).collect()
+                        self.logger.info(f"Successfully created where expression procedure: {where_expression_procedure_name}")
+                        self.session.sql(f"CALL {silver_database}.{silver_schema}.{where_expression_procedure_name}();").collect()
+                        self.logger.info(f"Successfully executed where expression procedure")
+                        transformed_view_name = where_expression_view_name  
+
+                # Execute SCD logic directly using temporary procedures
+                if scd_type == "2":
+                    if transformed_view_name:
+                        scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, transformed_view_name)
+                    else:
+                        scd2_procedure_sql = self.create_scd2_stored_procedure(silver_config, stream_name=bronze_table)
+                    # Create temporary procedure, execute it, then drop it
+                    temp_procedure_name = f"TEMP_SP_UPSERT_SCD2_{silver_table.upper()}_{pipeline_index}"
+                    temp_procedure_sql = scd2_procedure_sql.replace(
+                        f"SP_UPSERT_SCD2_{silver_table.upper()}()",
+                        f"{temp_procedure_name}()"
+                    ).replace(
+                        f"CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.SP_UPSERT_SCD2_{silver_table.upper()}()",
+                        f"CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{temp_procedure_name}()"
+                    )
+                    try:
+                        self.session.sql(temp_procedure_sql).collect()
+                        self.logger.info(f"Created temporary SCD2 procedure: {temp_procedure_name}")
+                        result = self.session.sql(f"CALL {silver_database}.{silver_schema}.{temp_procedure_name}();").collect()
+                        self.logger.info(f"Successfully executed SCD2 logic")
+                        # Drop temporary procedure
+                        self.session.sql(f"DROP PROCEDURE IF EXISTS {silver_database}.{silver_schema}.{temp_procedure_name}();").collect()
+                    except Exception as e:
+                        self.logger.error(f"Failed to execute SCD2 logic: {e}")
+                        # Try to drop temp procedure even on error
+                        try:
+                            self.session.sql(f"DROP PROCEDURE IF EXISTS {silver_database}.{silver_schema}.{temp_procedure_name}();").collect()
+                        except:
+                            pass
+                        raise
+                        
+                if scd_type == "1":
+                    if transformed_view_name:
+                        scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, transformed_view_name)
+                    else:
+                        scd1_procedure_sql = self.create_scd1_stored_procedure(silver_config, stream_name=bronze_table)
+                    # Create temporary procedure, execute it, then drop it
+                    temp_procedure_name = f"TEMP_SP_UPSERT_SCD1_{silver_table.upper()}_{pipeline_index}"
+                    temp_procedure_sql = scd1_procedure_sql.replace(
+                        f"SP_UPSERT_SCD1_{silver_table.upper()}()",
+                        f"{temp_procedure_name}()"
+                    ).replace(
+                        f"CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.SP_UPSERT_SCD1_{silver_table.upper()}()",
+                        f"CREATE OR REPLACE PROCEDURE {silver_database}.{silver_schema}.{temp_procedure_name}()"
+                    )
+                    try:
+                        self.session.sql(temp_procedure_sql).collect()
+                        self.logger.info(f"Created temporary SCD1 procedure: {temp_procedure_name}")
+                        result = self.session.sql(f"CALL {silver_database}.{silver_schema}.{temp_procedure_name}();").collect()
+                        self.logger.info(f"Successfully executed SCD1 logic")
+                        # Drop temporary procedure
+                        self.session.sql(f"DROP PROCEDURE IF EXISTS {silver_database}.{silver_schema}.{temp_procedure_name}();").collect()
+                    except Exception as e:
+                        self.logger.error(f"Failed to execute SCD1 logic: {e}")
+                        # Try to drop temp procedure even on error
+                        try:
+                            self.session.sql(f"DROP PROCEDURE IF EXISTS {silver_database}.{silver_schema}.{temp_procedure_name}();").collect()
+                        except:
+                            pass
+                        raise
+
+        if use_stored_procedures:
         master_silver_procedure = f"""
             CREATE OR REPLACE PROCEDURE {silver_database_prime}.{silver_schema_prime}.{master_silver_procedure_name}()
             RETURNS STRING
@@ -1067,19 +1220,19 @@ class SnowmetaPipeline:
         task_sql = self.create_master_silver_task(pipeline_silver_data, warehouse_name, after_task=None)
         
         try:
-            self.logger.info(f"Creating SCD2 task for Tables in  {silver_database_prime}.{silver_schema_prime}")
+                self.logger.info(f"Creating SCD task for Tables in  {silver_database_prime}.{silver_schema_prime}")
             self.session.sql(task_sql).collect()
             task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD_{silver_schema_prime.upper()}"
-            self.logger.info(f"Successfully created SCD2 task: {task_name}")
+                self.logger.info(f"Successfully created SCD task: {task_name}")
         except Exception as e:
-            self.logger.error(f"Failed to create SCD2 task: {e}")
+                self.logger.error(f"Failed to create SCD task: {e}")
             raise
         
         # Execute task if requested
         if execute_tasks:
             task_name = f"{bronze_database_prime}.{bronze_schema_prime}.TASK_SILVER_SCD_{silver_schema_prime.upper()}"
             try:
-                self.logger.info(f"Executing SCD2 task {task_name}")
+                    self.logger.info(f"Executing SCD task {task_name}")
                 result = self.session.sql(f"EXECUTE TASK {task_name};").collect()
                 self.logger.info(f"Successfully executed task. Result: {result}")
                 return result
@@ -1087,4 +1240,4 @@ class SnowmetaPipeline:
                 self.logger.error(f"Failed to execute task {task_name}: {e}")
                 raise    
         
-        self.logger.info(f"SCD2 silver pipeline execution completed. Processed {len(pipeline_silver_data)} table(s).")
+        self.logger.info(f"SCD silver pipeline execution completed. Processed {len(pipeline_silver_data)} table(s).")
