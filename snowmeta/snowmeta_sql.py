@@ -197,6 +197,15 @@ FROM {source_table}
                         {quarantine_where_sql}
             """.rstrip()
 
+        quarantine_exec = (
+            f"""
+                -- Create/append to quarantine table
+                EXECUTE IMMEDIATE '
+{create_quarantine_table_stmt}
+                ';
+            """ if has_quarantine and create_quarantine_table_stmt else ""
+        )
+
         sql = f"""
             CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
             RETURNS STRING
@@ -211,7 +220,7 @@ FROM {source_table}
                 EXECUTE IMMEDIATE '
 {create_main_view_stmt}
                 ';
-{"                -- Create/append to quarantine table\n                EXECUTE IMMEDIATE '\n" + create_quarantine_table_stmt + "\n                ';" if has_quarantine else ""}
+{quarantine_exec}
                 RETURN 'DQ artifacts created.';
             END;
             $$;
