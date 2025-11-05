@@ -137,8 +137,9 @@ class SnowmetaSQL:
                     "status = 'ACTIVE'"
                 ]
             where_action: Action to take when WHERE expression is violated.
-                Options: 'WARN', 'QUARANTINE', 'FAIL'
-                - WARN: Count and log dropped records, continue processing
+                Options: 'WARN', 'DROP', 'QUARANTINE', 'FAIL'
+                - WARN: Count and log dropped records, but keep all original records in view (no filtering)
+                - DROP: Count and log dropped records, filter out violating records from view
                 - QUARANTINE: Insert dropped records into quarantine table and log, continue processing
                 - FAIL: Raise an error and stop processing if any records violate WHERE expression
                 Default: 'WARN'
@@ -172,8 +173,8 @@ class SnowmetaSQL:
         """
         # Validate where_action parameter
         where_action_upper = where_action.upper()
-        if where_action_upper not in ['WARN', 'QUARANTINE', 'FAIL']:
-            raise ValueError(f"where_action must be one of ['WARN', 'QUARANTINE', 'FAIL'], got '{where_action}'")
+        if where_action_upper not in ['WARN', 'DROP', 'QUARANTINE', 'FAIL']:
+            raise ValueError(f"where_action must be one of ['WARN', 'DROP', 'QUARANTINE', 'FAIL'], got '{where_action}'")
         
         if where_action_upper == 'QUARANTINE' and not quarantine_table:
             raise ValueError("quarantine_table is required when where_action is 'QUARANTINE'")
@@ -304,6 +305,41 @@ class SnowmetaSQL:
             END;
             $$;
             """
+        elif where_action_upper == 'DROP':
+            sql = f"""
+            CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
+            RETURNS STRING
+            LANGUAGE SQL
+            EXECUTE AS OWNER
+            AS
+            $$
+            DECLARE
+                dropped_count NUMBER;
+            BEGIN
+                -- Count records that violate the WHERE expression
+                SELECT COUNT(*) INTO :dropped_count
+                FROM {source_table}
+                WHERE {where_not_sql};
+                
+                -- Create the view with records that pass the WHERE expression (filtered)
+                EXECUTE IMMEDIATE '
+                    CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
+                    SELECT
+                        *
+                    FROM {source_table}
+                    WHERE
+                        {where_sql}
+                ';
+                
+                -- Log the count of dropped records
+                IF (dropped_count > 0) THEN
+                    RETURN 'View {view_name} created. ' || CAST(:dropped_count AS VARCHAR) || ' record(s) dropped by WHERE expression.';
+                ELSE
+                    RETURN 'View {view_name} created with custom where expression. All records passed validation.';
+                END IF;
+            END;
+            $$;
+            """
         else:  # WARN mode (default)
             sql = f"""
             CREATE OR REPLACE PROCEDURE {target_schema}.{procedure_name}()
@@ -320,19 +356,17 @@ class SnowmetaSQL:
                 FROM {source_table}
                 WHERE {where_not_sql};
                 
-                -- Create the view with records that pass the WHERE expression
+                -- Create the view with ALL original records (no WHERE filtering)
                 EXECUTE IMMEDIATE '
                     CREATE OR REPLACE VIEW {target_schema}.{view_name} AS
                     SELECT
                         *
                     FROM {source_table}
-                    WHERE
-                        {where_sql}
                 ';
                 
-                -- Log the count of dropped records
+                -- Log the count of dropped records (but don't filter them)
                 IF (dropped_count > 0) THEN
-                    RETURN 'View {view_name} created. WARNING: ' || CAST(:dropped_count AS VARCHAR) || ' record(s) dropped by WHERE expression.';
+                    RETURN 'View {view_name} created. WARNING: ' || CAST(:dropped_count AS VARCHAR) || ' record(s) violated the WHERE expression but were kept in view.';
                 ELSE
                     RETURN 'View {view_name} created with custom where expression. All records passed validation.';
                 END IF;
