@@ -1130,6 +1130,7 @@ class SnowmetaPipeline:
                                 dq_expectations=dq_expectations
                             )
                         where_expression_procedure_sql = where_expression_sql_gen['sql']
+                        print(where_expression_procedure_sql)
                         where_expression_procedure_name = where_expression_sql_gen['procedure_name']
                         where_expression_view_name = where_expression_sql_gen['view_name']
                         self.session.sql(where_expression_procedure_sql).collect()

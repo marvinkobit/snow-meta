@@ -171,7 +171,7 @@ FROM {source_table}
 
         if has_quarantine:
             main_where_sql = f"{drop_sql} AND\n    {quarantine_pass_sql}"
-            quarantine_where_sql = f"{drop_sql} AND\n    NOT ({quarantine_pass_sql})"
+            quarantine_where_sql = f"\n    NOT ({quarantine_pass_sql})"
         else:
             main_where_sql = drop_sql
             quarantine_where_sql = None
