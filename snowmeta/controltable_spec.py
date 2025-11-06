@@ -126,6 +126,44 @@ class SnowflakeSink:
     where_clause: str
 
 
+@dataclass
+class GlobalConfig:
+    """Global pipeline configuration."""
+    pipeline_name: str
+    warehouse: str
+    table_properties: List[str]
+    metadata_option: List[str]
+    timestamp: str
+
+
+@dataclass
+class BronzeColumnarSpec:
+    """Columnar bronze control table spec - one row per table."""
+    source_table: str
+    source_path_dev: str
+    reader_format: str = "CSV"
+    load_strategy: Optional[str] = None
+    table_properties: Optional[List[str]] = None
+    bronze_database_dev: Optional[str] = None
+    bronze_schema: Optional[str] = None
+    bronze_table: Optional[str] = None
+    variant_load: Optional[str] = None
+    variant_column_name: Optional[str] = None
+
+
+@dataclass
+class SilverColumnarSpec:
+    """Columnar silver control table spec - one row per table."""
+    bronze_database_dev: str
+    bronze_schema: str
+    bronze_table: str
+    silver_database_dev: str
+    silver_schema: str
+    silver_table: str
+    silver_cdc_apply_changes: Optional[Dict[str, Any]] = None
+    silver_transformation_json: Optional[Dict[str, Any]] = None
+
+
 class ControlTableSpecUtils:
     """A collection of methods for working with ControlTableSpec in Snowflake."""
 

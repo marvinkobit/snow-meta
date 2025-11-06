@@ -8,6 +8,7 @@ Snowmeta Pipeline is a comprehensive framework designed to be **flexible**, **sc
 
 - ✅ Metadata-driven configuration
 - ✅ Bronze layer ingestion with automatic schema inference
+- ✅ Bring Your Own Schema (BYOS) - Custom schema definition from JSON files
 - ✅ Variant loading for nested JSON data in bronze layer
 - ✅ Silver layer transformations (SCD Type 1 & Type 2)
 - ✅ JSON flattening for nested VARIANT/JSON columns
@@ -32,6 +33,7 @@ Snowmeta Pipeline is a comprehensive framework designed to be **flexible**, **sc
 ### Bronze Layer Ingestion
 
 - **Automatic Schema Inference**: Uses Snowflake's `INFER_SCHEMA` function
+- **Bring Your Own Schema (BYOS)**: Load custom schema definitions from JSON files stored in Snowflake stages
 - **Multiple File Formats**: Support for CSV, JSON, Parquet, and more
 - **Variant Loading**: Option to load nested JSON data as VARIANT type for semi-structured data
 - **Unified Stored Procedures**: Single procedure for all tables
@@ -176,6 +178,54 @@ pipeline.invoke_bronze_pipeline(
     use_stored_procedures=True
 )
 ```
+
+#### Bring Your Own Schema (BYOS)
+
+```python
+# Bronze pipeline with custom schema definition
+# First, upload your schema JSON file to a Snowflake stage
+# Example schema file: sample_customer_schema.json
+# {
+#     "fields": [
+#         { "name": "CUSTOMER_ID", "type": "NUMBER", "nullable": true },
+#         { "name": "NAME", "type": "VARCHAR", "nullable": true },
+#         { "name": "EMAIL", "type": "VARCHAR", "nullable": true },
+#         { "name": "ACCTBAL", "type": "FLOAT", "nullable": true },
+#         { "name": "LOAD_TIMESTAMP", "type": "TIMESTAMP_NTZ", "nullable": true }
+#     ]
+# }
+
+pipeline_bronze_data = [
+    {
+        "source_table": "customers_raw",
+        "source_path_dev": "@RAW.CUSTOMERS.LANDING/",
+        "reader_format": "CSV",
+        "bronze_database_dev": "ANALYTICS",
+        "bronze_schema": "CUSTOMERS_BRONZE",
+        "bronze_table": "customers",
+        "byos_schema": "@RAW.SCHEMAS/sample_customer_schema.json"  # Path to schema file in stage
+    }
+]
+
+pipeline.invoke_bronze_pipeline(
+    pipeline_data=pipeline_bronze_data,
+    warehouse_name="COMPUTE_WH",
+    use_stored_procedures=True
+)
+```
+
+**Schema File Format**:
+The schema JSON file should be stored in a Snowflake stage and follow this structure:
+```json
+{
+    "fields": [
+        { "name": "COLUMN_NAME", "type": "SNOWFLAKE_TYPE", "nullable": true },
+        { "name": "ANOTHER_COLUMN", "type": "VARCHAR", "nullable": false }
+    ]
+}
+```
+
+**Supported Snowflake Types**: `NUMBER`, `VARCHAR`, `STRING`, `FLOAT`, `DOUBLE`, `INTEGER`, `BIGINT`, `BOOLEAN`, `DATE`, `TIMESTAMP_NTZ`, `TIMESTAMP_LTZ`, `TIMESTAMP_TZ`, `VARIANT`, `OBJECT`, `ARRAY`, etc.
 
 ### 3. Silver Layer - SCD Type 2
 
@@ -418,10 +468,13 @@ Raw Stage Data → Bronze Layer → Silver Layer → Gold Layer
 
 - **Input**: Raw files from cloud storage (S3, Azure Blob, GCS)
 - **Processing**: 
-  - Schema inference using `INFER_SCHEMA`
+  - Schema definition via:
+    - Automatic schema inference using `INFER_SCHEMA`
+    - Custom schema definition (Bring Your Own Schema - BYOS)
+    - Variant loading for nested JSON data
   - Data loading via `COPY INTO`
   - Format validation
-- **Output**: Raw tables with inferred schemas
+- **Output**: Raw tables with defined schemas
 
 ### Silver Layer
 
@@ -480,6 +533,10 @@ The framework generates SQL code at runtime based on:
 - Procedure body dynamically built from pipeline configuration
 - One task executes the entire bronze ingestion pipeline
 - Supports multiple file formats (CSV, JSON, Parquet, Variant)
+- **Schema Definition Options**:
+  - **Automatic Inference**: Uses `INFER_SCHEMA` to detect schema from sample files
+  - **Bring Your Own Schema (BYOS)**: Load custom schema from JSON files in Snowflake stages
+  - **Variant Loading**: Load nested JSON as VARIANT type for semi-structured data
 
 ### Silver Layer Architecture
 
